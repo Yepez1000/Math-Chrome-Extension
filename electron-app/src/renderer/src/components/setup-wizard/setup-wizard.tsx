@@ -1,8 +1,11 @@
+"use client"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/lib/hooks/use-toast"
 import { motion } from "framer-motion"
+import { useNavigate } from "react-router-dom"
 
 import { DetectMinecraftStep } from "./steps/detect-minecraft-step"
 import { FlavorSelectionStep } from "./steps/flavor-selection-step"
@@ -32,6 +35,7 @@ const pageVariants = {
 
 export function SetupWizard() {
   const { toast } = useToast()
+  const navigate = useNavigate()
   const [step, setStep] = useState<WizardStep>("detect")
   const [config, setConfig] = useState<ServerConfig>({
     minecraftPath: "C:\\Users\\Username\\AppData\\Roaming\\.minecraft", // Pre-filled for testing
@@ -93,18 +97,8 @@ export function SetupWizard() {
       // window.electronAPI.startServer(config)
       console.log("Starting server with config:", config)
 
-      toast({
-        title: "Server starting",
-        description: "Your Minecraft server is being initialized...",
-      })
-
-      // Simulate server start
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      toast({
-        title: "Server started successfully",
-        description: `${config.isModded ? "Modded" : "Vanilla"} server is now running.`,
-      })
+      // Navigate to the standalone server startup page
+      navigate("/server-startup")
     } catch (error) {
       toast({
         title: "Failed to start server",
