@@ -26,7 +26,7 @@
 ### 3. Key Features
 - **Local Server Management**: Launch, stop, reset, and configure Minecraft Java Edition servers locally.
 - **Modded Server Support**: Use local modpacks or browse/install from CurseForge (optional API integration).
-- **Automatic Tunneling**: Use ngrok to expose local server with a DNS-masked public IP.
+- **Automatic Tunneling**: Use Playit.gg to expose local server with a DNS-masked public IP by installing and managing the Playit agent as a background Windows service.
 - **Auto Minecraft Detection**: Detect user Minecraft installation or prompt to locate/install.
 - **Performance Recommendation Engine**: Suggest CPU/RAM settings based on whether the user is playing and hosting on the same device.
 - **Whitelist Feature**: Allow only invited usernames to join.
@@ -43,9 +43,10 @@
 4. If modded: user selects a modpack (upload or browse CurseForge).
 5. App suggests optimal performance settings based on system specs.
 6. User launches the server.
-7. App auto-starts ngrok tunnel, retrieves public address, and shows sharable link.
-8. User shares link with friends.
-9. Server runs locally until user stops or shuts down.
+7. App installs and starts the Playit.gg agent in the background as a Windows service.
+8. App retrieves the public address and shows a sharable link.
+9. User shares link with friends.
+10. Server runs locally until user stops or shuts down.
 
 ---
 
@@ -53,7 +54,7 @@
 | Layer | Technology |
 |-------|------------|
 | Desktop Shell | Electron (Node.js backend + Vite + React frontend) |
-| Tunneling | ngrok (TCP) embedded and auto-launched by Electron main process |
+| Tunneling | Playit.gg agent, managed as a Windows service via NSSM from Electron backend |
 | Minecraft Server Control | Node.js `child_process` API for jar execution |
 | UI Components | React + Tailwind CSS + shadcn/ui |
 | System Insights | `systeminformation` npm package for RAM/CPU detection |
@@ -67,7 +68,7 @@
 - Windows-only support (for v1)
 - Internet access required for tunnel creation and modpack browsing
 - App size will be larger due to Electron (expect ~80-100MB)
-- ngrok free-tier limitations: session durations, concurrent connections, etc.
+- Playit.gg agent must be authenticated/configured initially (handled once via background setup)
 
 ---
 
@@ -75,5 +76,6 @@
 - App runs without requiring any terminal commands.
 - A 12-year-old can host a server, share a link, and invite a friend to join.
 - No user has to touch router settings or deal with IP addresses.
-- more than 90% of users complete server setup and launch in under 5 minutes.
-- less than 5% crash/error reports across 100+ installs.
+- >90% of users complete server setup and launch in under 5 minutes.
+- <5% crash/error reports across 100+ installs.
+
