@@ -21,7 +21,7 @@ export default function ServerStartupPage() {
   })
 
   return (
-    <main className="container mx-auto py-10 px-4 bg-night min-h-screen flex items-center justify-center">
+    <main className="container mx-auto py-10 px-4 min-h-screen flex items-center justify-center">
       <div className="w-full max-w-4xl">
         <ServerStartupScreen
           config={config}
