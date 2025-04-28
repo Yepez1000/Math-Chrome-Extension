@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/lib/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 
@@ -12,18 +12,28 @@ import { FlavorSelectionStep } from "./steps/flavor-selection-step"
 import { ModpackSelectionStep } from "./steps/modpack-selection-step"
 import { PerformanceSettingsStep } from "./steps/performance-settings-step"
 import { ReviewStep } from "./steps/review-step"
+import { WorldSetupStep } from "./steps/world-setup-step"
 
-export type WizardStep = "detect" | "flavor" | "modpack" | "performance" | "review"
+// Update the WizardStep type to include the new world step
+export type WizardStep = "detect" | "flavor" | "modpack" | "world" | "performance" | "review"
 
+// Update the ServerConfig type to include serverType
 export type ServerConfig = {
   minecraftPath: string | null
   isModded: boolean
+  serverType: "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit"
   modpackPath?: string
   modpackName?: string
   ram: number
   hostingMode: "play+host" | "host"
   javaPath?: string
   serverDirectory?: string
+  worldPath?: string
+  worldName?: string
+  worldSeed?: string
+  worldType?: string
+  generateStructures?: boolean
+  importedWorld?: boolean
 }
 
 // Animation variants for page transitions
@@ -37,19 +47,22 @@ export function SetupWizard() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const [step, setStep] = useState<WizardStep>("detect")
+  // In the useState initialization, add a default serverType
   const [config, setConfig] = useState<ServerConfig>({
     minecraftPath: "C:\\Users\\Username\\AppData\\Roaming\\.minecraft", // Pre-filled for testing
     isModded: false,
+    serverType: "vanilla", // Default server type
     ram: 4,
     hostingMode: "play+host",
     serverDirectory: "C:\\MinecraftServers\\MyServer", // Pre-filled for testing
   })
 
-  // Define all steps and their visibility conditions
+  // In the SetupWizard component, update the steps array to include the world step
   const steps: { id: WizardStep; label: string; isVisible: boolean }[] = [
     { id: "detect", label: "Detect", isVisible: true },
     { id: "flavor", label: "Server Type", isVisible: true },
     { id: "modpack", label: "Modpack", isVisible: config.isModded },
+    { id: "world", label: "World", isVisible: true },
     { id: "performance", label: "Performance", isVisible: true },
     { id: "review", label: "Review", isVisible: true },
   ]
@@ -57,13 +70,14 @@ export function SetupWizard() {
   // Get only visible steps
   const visibleSteps = steps.filter((s) => s.isVisible)
 
+  // Update the handleNext function to include the world step
   const handleNext = () => {
-    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "performance", "review"]
+    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
     const currentIndex = stepOrder.indexOf(step)
 
     // Skip modpack step if vanilla is selected
     if (step === "flavor" && !config.isModded) {
-      setStep("performance")
+      setStep("world")
       return
     }
 
@@ -72,12 +86,13 @@ export function SetupWizard() {
     }
   }
 
+  // Update the handleBack function to include the world step
   const handleBack = () => {
-    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "performance", "review"]
+    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
     const currentIndex = stepOrder.indexOf(step)
 
     // Skip modpack step if vanilla is selected when going back
-    if (step === "performance" && !config.isModded) {
+    if (step === "world" && !config.isModded) {
       setStep("flavor")
       return
     }
@@ -177,6 +192,9 @@ export function SetupWizard() {
             {step === "modpack" && (
               <ModpackSelectionStep config={config} updateConfig={updateConfig} onComplete={handleNext} />
             )}
+
+            {/* In the render section, add the WorldSetupStep component */}
+            {step === "world" && <WorldSetupStep config={config} updateConfig={updateConfig} onComplete={handleNext} />}
 
             {step === "performance" && (
               <PerformanceSettingsStep config={config} updateConfig={updateConfig} onComplete={handleNext} />

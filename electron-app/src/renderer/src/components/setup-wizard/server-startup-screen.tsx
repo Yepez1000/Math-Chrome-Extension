@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { motion, AnimatePresence } from "framer-motion"
 import { Loader2, CheckCircle, XCircle, Copy, ExternalLink, AlertTriangle } from "lucide-react"
-import { useToast } from "@/lib/hooks/use-toast"
+import { useToast } from "@renderer/hooks/use-toast"
 import type { ServerConfig } from "./setup-wizard"
 
 interface ServerStartupScreenProps {

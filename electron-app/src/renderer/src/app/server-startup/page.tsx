@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { ServerStartupScreen } from "@/components/setup-wizard/server-startup-screen"
 import { useNavigate } from "react-router-dom"
-import { useToast } from "@/lib/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast"
 import type { ServerConfig } from "@/components/setup-wizard/setup-wizard"
 
 export default function ServerStartupPage() {
@@ -15,6 +15,7 @@ export default function ServerStartupPage() {
   const [config] = useState<ServerConfig>({
     minecraftPath: "C:\\Users\\Username\\AppData\\Roaming\\.minecraft",
     isModded: false,
+    serverType: "vanilla",
     ram: 4,
     hostingMode: "play+host",
     serverDirectory: "C:\\MinecraftServers\\MyServer",

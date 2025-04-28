@@ -1,9 +1,5 @@
-import { SetupWizard } from "@/components/setup-wizard/setup-wizard"
+import { ServersList } from "@/components/servers-list/servers-list"
 
 export default function Home() {
-  return (
-    <main className="container mx-auto py-10 px-4 bg-night min-h-screen">
-      <SetupWizard />
-    </main>
-  )
+  return <ServersList />
 }
