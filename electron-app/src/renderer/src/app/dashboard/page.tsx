@@ -1,3 +1,5 @@
+"use client"
+
 import { ServerDashboard } from "@/components/dashboard/server-dashboard"
 
 export default function DashboardPage() {

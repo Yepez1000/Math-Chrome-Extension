@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { motion } from "framer-motion"
 import type { ServerConfig } from "../setup-wizard"
-import { Check, CuboidIcon as Cube, Blocks, MemoryStickIcon as Memory, Cpu, FolderOpen } from "lucide-react"
+import { Check, CuboidIcon as Cube, Blocks, MemoryStickIcon as Memory, Cpu, FolderOpen, Globe } from "lucide-react"
 
 interface ReviewStepProps {
   config: ServerConfig
@@ -90,6 +90,11 @@ export function ReviewStep({ config, onComplete }: ReviewStepProps) {
               </div>
 
               <div className="space-y-4">
+                <div className="flex justify-between py-2 border-b border-cool-gray/20">
+                  <span className="text-cool-gray">Server Type</span>
+                  <span className="text-linen font-medium capitalize">{config.serverType}</span>
+                </div>
+
                 <motion.div
                   className="flex items-center gap-3"
                   custom={3}
@@ -119,6 +124,24 @@ export function ReviewStep({ config, onComplete }: ReviewStepProps) {
                   <div>
                     <h3 className="font-medium text-linen">Server Location</h3>
                     <p className="text-sm text-cool-gray">{config.serverDirectory || "Default location"}</p>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  className="flex items-center gap-3"
+                  custom={5}
+                  initial="hidden"
+                  animate="visible"
+                  variants={itemVariants}
+                >
+                  <Globe className="h-5 w-5 text-linen" />
+                  <div>
+                    <h3 className="font-medium text-linen">World</h3>
+                    <p className="text-sm text-cool-gray">
+                      {config.importedWorld
+                        ? `Imported: ${config.worldPath?.split("\\").pop()}`
+                        : `New world: ${config.worldName || "Minecraft World"}`}
+                    </p>
                   </div>
                 </motion.div>
 

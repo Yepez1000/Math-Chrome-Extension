@@ -1,15 +1,14 @@
+"use client"
+
 import type React from "react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Cpu, MemoryStickIcon as Memory, Clock } from "lucide-react"
+import { useServerStore } from "@/lib/store"
 
-interface ServerStatsProps {
-  cpu: number
-  ram: number
-  uptime: number
-}
+export function ServerStats() {
+  const { cpu, ram, uptime } = useServerStore()
 
-export function ServerStats({ cpu, ram, uptime }: ServerStatsProps) {
   // Format uptime
   const formatUptime = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`

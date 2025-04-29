@@ -3,16 +3,21 @@
 import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { Users, Globe } from "lucide-react"
+import { useServerStore } from "@/lib/store"
+import { useToast } from "@/hooks/use-toast"
 
-interface ServerHeaderProps {
-  serverName: string
-  status: "online" | "offline" | "starting" | "stopping"
-  version: string
-  address: string
-  playerCount: string
-}
+export function ServerHeader() {
+  const { serverName, status, version, address, onlinePlayers, maxPlayers } = useServerStore()
+  const { toast } = useToast()
 
-export function ServerHeader({ serverName, status, version, address, playerCount }: ServerHeaderProps) {
+  const copyAddressToClipboard = () => {
+    navigator.clipboard.writeText(address)
+    toast({
+      title: "Address copied",
+      description: "Server address copied to clipboard",
+    })
+  }
+
   return (
     <motion.div
       className="bg-space-cadet rounded-lg shadow-lg p-6 border border-cool-gray/30"
@@ -43,12 +48,20 @@ export function ServerHeader({ serverName, status, version, address, playerCount
         <div className="flex flex-wrap gap-4 md:gap-6">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-cool-gray" />
-            <span className="text-linen font-mono text-sm">{address}</span>
+            <span
+              className="text-linen font-mono text-sm cursor-pointer hover:text-linen/70 hover:underline transition-colors"
+              onClick={copyAddressToClipboard}
+              title="Click to copy"
+            >
+              {address}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-cool-gray" />
-            <span className="text-linen">{playerCount} players</span>
+            <span className="text-linen">
+              {onlinePlayers}/{maxPlayers} players
+            </span>
           </div>
         </div>
       </div>
