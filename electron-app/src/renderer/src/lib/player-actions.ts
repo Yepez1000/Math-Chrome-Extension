@@ -41,7 +41,7 @@ export const playerActions: PlayerAction[] = [
     description: "Prevent the player from joining your server.",
     icon: Ban,
     // I don't know why but you must use group-hover to make the icon change color and normal hover to make the text change color
-    className: "text-red-600 group-hover:text-red-600/80 hover:text-red-600/80",
+    className: "text-red-400 group-hover:text-red-400/80 hover:text-red-400/80",
     handler: async (playerId, reason) => {
       const { updatePlayer } = useServerStore.getState()
       updatePlayer(playerId, { isOnline: false, isBanned: true })
@@ -63,7 +63,7 @@ export const playerActions: PlayerAction[] = [
     label: "Remove Operator",
     description: "Remove the player's administrative privileges.",
     icon: ShieldX,
-    className: "text-red-600 group-hover:text-red-600/80 hover:text-red-600/80",
+    className: "text-red-400 group-hover:text-red-400/80 hover:text-red-400/80",
     handler: async (playerId) => {
       const { updatePlayer } = useServerStore.getState()
       updatePlayer(playerId, { isOp: false })
@@ -73,7 +73,7 @@ export const playerActions: PlayerAction[] = [
     id: "unwhitelist",
     label: "Remove from Whitelist",
     description: "Remove the player from your server's whitelist.",
-    className: "text-red-600 group-hover:text-red-600/80 hover:text-red-600/80",
+    className: "text-red-400 group-hover:text-red-400/80 hover:text-red-400/80",
     icon: UserMinus,
     handler: async (playerId) => {
       const { updatePlayer } = useServerStore.getState()
@@ -84,7 +84,7 @@ export const playerActions: PlayerAction[] = [
     id: "banip",
     label: "Ban IP Address",
     description: "Ban the player's IP address from the server.",
-    className: "text-red-600 group-hover:text-red-600/80 hover:text-red-600/80",
+    className: "text-red-400 group-hover:text-red-400/80 hover:text-red-400/80",
     icon: Globe,
     handler: async (playerId, reason) => {
       // Implement IP ban logic here
@@ -94,7 +94,7 @@ export const playerActions: PlayerAction[] = [
     id: "delete",
     label: "Delete Player Data",
     description: "Permanently delete all data associated with the player.",
-    className: "text-red-600 group-hover:text-red-600/80 hover:text-red-600/80",
+    className: "text-red-400 group-hover:text-red-400/80 hover:text-red-400/80",
     icon: Trash2,
     handler: async (playerId) => {
       // Implement delete logic here
