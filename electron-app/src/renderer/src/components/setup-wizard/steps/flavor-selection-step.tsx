@@ -28,7 +28,7 @@ type ServerTypeInfo = {
   recommended?: boolean
 }
 
-export function FlavorSelectionStep({ config, updateConfig, onComplete }: FlavorSelectionStepProps) {
+export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStepProps) {
   const [selectedType, setSelectedType] = useState<ServerConfig["serverType"]>(config.serverType)
   const [carouselPage, setCarouselPage] = useState<1 | 2>(1)
   const [isAnimating, setIsAnimating] = useState(false)
@@ -320,7 +320,7 @@ export function FlavorSelectionStep({ config, updateConfig, onComplete }: Flavor
           <div className="flex items-center gap-2">
             <motion.div
               animate={{ rotate: [0, 360] }}
-              transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, repeatType: "loop", ease: "linear" }}
+              transition={{ duration: 5, repeat: Number.POSITIVE_INFINITY, repeatType: "loop", ease: "linear" }}
             >
               <Cpu className="h-5 w-5 text-linen" />
             </motion.div>
@@ -346,13 +346,13 @@ export function FlavorSelectionStep({ config, updateConfig, onComplete }: Flavor
                     {config.hostingMode === "play+host" && (
                       <motion.div
                         className="mt-2 text-xs bg-linen/5 p-2 rounded border border-linen/20 text-cool-gray"
-                        initial={{ opacity: 0, height: 0 }}
+                        initial={{ opacity: 0, height: "auto" }}
                         animate={{ opacity: 1, height: "auto" }}
-                        transition={{ duration: 0.3 }}
                       >
                         <strong className="text-linen">Recommendation:</strong> For{" "}
                         {config.isModded ? "modded" : "vanilla"} servers where you're also playing, allocate at least{" "}
-                        {config.isModded ? "6-8GB" : "4GB"} of RAM for optimal performance.
+                        {config.isModded ? "6-8GB" : "4GB"} of RAM for optimal performance, while leaving at least{" "}
+                        {config.isModded ? "6-8GB" : "4GB"} of RAM for the game client.
                       </motion.div>
                     )}
                   </div>
@@ -369,9 +369,8 @@ export function FlavorSelectionStep({ config, updateConfig, onComplete }: Flavor
                     {config.hostingMode === "host" && (
                       <motion.div
                         className="mt-2 text-xs bg-linen/5 p-2 rounded border border-linen/20 text-cool-gray"
-                        initial={{ opacity: 0, height: 0 }}
+                        initial={{ opacity: 0, height: "auto" }}
                         animate={{ opacity: 1, height: "auto" }}
-                        transition={{ duration: 0.3 }}
                       >
                         <strong className="text-linen">Recommendation:</strong> For dedicated{" "}
                         {config.isModded ? "modded" : "vanilla"} servers, allocate at least{" "}
@@ -385,19 +384,7 @@ export function FlavorSelectionStep({ config, updateConfig, onComplete }: Flavor
           </Card>
         </div>
       </motion.div>
-
-      <motion.div
-        className="flex justify-center mt-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8 }}
-      >
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full max-w-md">
-          <Button onClick={onComplete} className="w-full bg-linen text-night hover:bg-linen/90">
-            Continue
-          </Button>
-        </motion.div>
-      </motion.div>
+ 
     </div>
   )
 }
