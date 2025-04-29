@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { devtools, persist } from "zustand/middleware"
+import type { LucideIcon } from "lucide-react"
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping"
 
@@ -19,8 +20,8 @@ export type PlayerAction = {
   id: string
   label: string
   description: string
-  icon?: string
-  color?: string
+  icon?: LucideIcon
+  className?: string
   requiresConfirmation?: boolean
   requiresInput?: boolean
   inputLabel?: string

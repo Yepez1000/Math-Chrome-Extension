@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { playerActions } from "@/lib/player-actions"
 import { useServerStore } from "@/lib/store"
+import { cn } from "@/lib/utils"
 import type { PlayerData, PlayerAction } from "@/lib/store"
 
 interface PlayerActionsDialogProps {
@@ -114,10 +115,10 @@ export function PlayerActionsDialog({ player, open, onOpenChange, onAction }: Pl
                   key={action.id}
                   onClick={() => handleSelectAction(action.id)}
                   variant="outline"
-                  className={`justify-start border-cool-gray/30 text-linen hover:bg-night/50${action.id === "delete" ? " text-red-400" : ""}`}
+                  className={cn("group justify-start border-cool-gray/30 hover:bg-night/50 hover:text-linen/80", action.className)}
                 >
-                  {/* You can add icons here if needed using action.icon */}
-                  {action.label}
+                  {action.icon && <action.icon className={cn("h-5 w-5 mr-2", action.className)} />}
+                  <span>{action.label}</span>
                 </Button>
               ))}
             </div>
