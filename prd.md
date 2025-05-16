@@ -78,4 +78,3 @@
 - No user has to touch router settings or deal with IP addresses.
 - >90% of users complete server setup and launch in under 5 minutes.
 - <5% crash/error reports across 100+ installs.
-
