@@ -7,7 +7,7 @@
 ---
 
 ### 1. Overview
-**Goal:** Build a Windows desktop application that enables anyone—including children—to easily host a modded Minecraft Java server on their local machine, with secure public access through an abstracted tunnel (no port forwarding required).
+**Goal:** Build a Windows desktop application that enables anyone to easily host a modded Minecraft Java server on their local machine, with secure public access through an abstracted tunnel (no port forwarding required).
 
 **Key Value Propositions:**
 - No technical setup needed (no port forwarding, no exposed IPs).
@@ -18,7 +18,7 @@
 
 ### 2. Target Users
 - Minecraft Java Edition players who want to host servers for friends.
-- Primarily casual users with limited technical knowledge (children, teens).
+- Primarily casual users with limited technical knowledge.
 - Users with basic Windows setups.
 
 ---
