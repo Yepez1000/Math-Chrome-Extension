@@ -158,21 +158,21 @@ export function SetupWizard() {
                     {index + 1}
                   </motion.div>
                   <span
-                    className={`ml-2 text-sm hidden md:block
+                    className={`ml-2 text-sm hidden sm:block
                       ${isActive ? "text-linen font-medium" : isPast ? "text-cool-gray" : "text-cool-gray/60"}`}
                   >
                     {s.label}
                   </span>
 
                   {index < visibleSteps.length - 1 && (
-                    <div className={`h-px w-8 md:w-12 mx-1 ${isPast ? "bg-cool-gray" : "bg-night"}`}></div>
+                    <div className={`h-px md:w-8 sm:w-0 mx-1 ${isPast ? "bg-cool-gray" : "bg-night"}`}></div>
                   )}
                 </div>
               )
             })}
           </div>
         </CardHeader>
-        <CardContent className="min-h-[400px] pt-6">
+        <CardContent className="md:min-h-[200px] lg:min-h-[400px] pt-6">
           <motion.div
             key={step}
             initial="initial"
