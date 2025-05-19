@@ -52,10 +52,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Dependencies
-        run: npm install --prefix electron-app
+        run: npm install
+        working-directory: ./electron-app
 
-      - name: Build App
-        run: npm run build --prefix electron-app
-
-      - name: Package App
-        run: npm run package --prefix electron-app
+      - name: Build & Package
+        run: |
+          npm run build
+          npm run package
+        working-directory: ./electron-app
