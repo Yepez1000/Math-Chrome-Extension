@@ -1,0 +1,62 @@
+name: Development
+
+on:
+  push:
+    branches: [main, feat/**, fix/**, chore/**]
+  pull_request:
+
+jobs:
+  frontend-build:
+    name: Front-end Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ./electron-app/src/renderer/
+
+      - name: Build React
+        run: npm run build
+        working-directory: ./electron-app/src/renderer/
+
+  backend-build:
+    name: Back-end Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ./electron-app/src/main/
+
+      - name: Build Main
+        run: npm run build
+        working-directory: ./electron-app/src/main/
+
+  package-app:
+    name: Package App
+    runs-on: windows-latest
+    needs: [frontend-build, backend-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ./electron-app
+
+      - name: Build & Package
+        run: |
+          npm run build
+          npm run package
+        working-directory: ./electron-app
