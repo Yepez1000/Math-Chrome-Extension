@@ -15,6 +15,59 @@ export function registerWorldHandlers() {
   // Handle world import
   ipcMain.handle('import-world', async (_event, sourcePath: string, worldName: string) => {
     try {
+      // --- Validation: Check if it's a valid Minecraft world folder ---
+
+      const levelDatPath = join(sourcePath, 'level.dat');
+      const regionDirPath = join(sourcePath, 'region');
+      const dataDirPath = join(sourcePath, 'data');
+
+      let isWorld = true;
+      let missingElements: string[] = []; // Explicitly define as string array
+
+      // Check for level.dat file
+      try {
+        await fs.access(levelDatPath);
+      } catch {
+        missingElements.push('level.dat');
+        isWorld = false;
+      }
+
+      // Check for region directory
+      try {
+        const stats = await fs.stat(regionDirPath);
+        if (!stats.isDirectory()) {
+            missingElements.push('region (not a directory)');
+            isWorld = false;
+        }
+      } catch {
+        missingElements.push('region directory');
+        isWorld = false;
+      }
+
+       // Check for data directory (often present, but region is more critical)
+       // Making this check optional for broader compatibility
+      try {
+        const stats = await fs.stat(dataDirPath);
+        if (!stats.isDirectory()) {
+            missingElements.push('data (not a directory)');
+            isWorld = false;
+        }
+      } catch {
+        missingElements.push('data directory');
+        isWorld = false;
+      }
+
+
+      if (!isWorld) {
+        return { 
+          success: false, 
+          message: `Selected folder does not appear to be a valid Minecraft world. Missing: ${missingElements.join(', ')}.` 
+        };
+      }
+
+      // --- End Validation ---
+
+
       // Path to server.properties in the selected world folder
       const propsPath = join(sourcePath, 'server.properties');
 
@@ -36,7 +89,9 @@ export function registerWorldHandlers() {
 
       return { success: true, message: 'World imported successfully!' };
     } catch (error: any) {
-      return { success: false, message: error.message };
+      // Catch any other errors during the process
+      console.error('Import process failed:', error);
+      return { success: false, message: `Import failed: ${error.message}` };
     }
   });
 } 
