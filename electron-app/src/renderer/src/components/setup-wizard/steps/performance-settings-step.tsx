@@ -57,12 +57,23 @@ export function PerformanceSettingsStep({ config, updateConfig, onComplete }: Pe
   }
 
   const handleBrowseServerDir = async () => {
-    // Securely open a folder picker via Electron main process
-    // window.api is exposed by preload contextBridge
-    // @ts-expect-error: api is injected by preload
-    const folder = await window.api.selectServerDirectory?.();
-    if (folder) {
-      updateConfig({ serverDirectory: folder });
+    try {
+      // Open directory picker using the exposed Electron API
+      const chosenDirectory = await window.electronAPI?.pickDirectory();
+
+      if (chosenDirectory) {
+        // Update the serverDirectory in the config with the selected path
+        updateConfig({ serverDirectory: chosenDirectory });
+        // You might want to add some visual feedback here that a directory was selected
+        console.log('Server directory selected:', chosenDirectory);
+      } else {
+        console.log('Server directory selection cancelled.');
+        // Handle cancellation - maybe show a message or just do nothing
+      }
+    } catch (error: any) {
+      console.error('Error picking server directory:', error);
+      // Show an error message to the user
+      alert('Failed to select server directory: ' + error.message);
     }
   }
 
