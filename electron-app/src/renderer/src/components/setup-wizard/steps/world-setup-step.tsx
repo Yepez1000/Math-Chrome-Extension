@@ -33,12 +33,7 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
         return;
       }
   
-      const defaultName = chosen.split(/[\\/]/).pop() || 'New World';
-      const worldName = await window.electronAPI.showPrompt('Enter World Name', defaultName);
-      if (!worldName) {
-        setIsImporting(false);
-        return;
-      }
+      const worldName = chosen.split(/[\\/]/).pop() || 'New World';
   
       // Import the world
       const result = await window.electronAPI.importWorld(chosen, worldName);
