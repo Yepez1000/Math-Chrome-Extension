@@ -1,18 +1,10 @@
 import { contextBridge } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import fs from 'fs/promises';
+import os from 'os';
 
 // Custom APIs for renderer
 const { ipcRenderer } = require('electron');
-
-const api = {
-  /**
-   * Opens a secure folder picker for server directory selection.
-   * Returns the selected absolute path, or null if cancelled.
-   */
-  selectServerDirectory: async () => {
-    return await ipcRenderer.invoke('select-server-directory');
-  }
-}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
@@ -20,7 +12,22 @@ const api = {
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
+    contextBridge.exposeInMainWorld('electronAPI', {
+      // Get the system's temporary directory
+      getTempDir: () => os.tmpdir(),
+      // Write data to a file in the temp directory
+      writeTempFile: (path: string, data: string) => fs.writeFile(path, data),
+      // Open a native directory picker dialog
+      pickDirectory: async () => {
+        return await ipcRenderer.invoke('pick-directory');
+      },
+      // Import a Minecraft world from a directory or zip file
+      importWorld: (zipPath: string, worldName: string) => 
+        ipcRenderer.invoke('import-world', zipPath, worldName),
+      test: () => 'test successful',
+      showPrompt: (title: string, defaultValue: string) => 
+        ipcRenderer.invoke('show-prompt', title, defaultValue)
+    })
   } catch (error) {
     console.error(error)
   }
@@ -28,5 +35,16 @@ if (process.contextIsolated) {
   // @ts-ignore (define in dts)
   window.electron = electronAPI
   // @ts-ignore (define in dts)
-  window.api = api
+  window.electronAPI = {
+    getTempDir: () => os.tmpdir(),
+    writeTempFile: (path: string, data: string) => fs.writeFile(path, data),
+    pickDirectory: async () => {
+      return await ipcRenderer.invoke('pick-directory');
+    },
+    importWorld: (zipPath: string, worldName: string) => 
+      ipcRenderer.invoke('import-world', zipPath, worldName),
+    test: () => 'test successful',
+    showPrompt: (title: string, defaultValue: string) => 
+      ipcRenderer.invoke('show-prompt', title, defaultValue)
+  }
 }

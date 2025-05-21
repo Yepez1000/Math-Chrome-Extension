@@ -23,29 +23,44 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
 
   // Handle world import
   const handleImportWorld = async () => {
-    setIsImporting(true)
-
+    setIsImporting(true);
+  
     try {
-      // In a real app, this would use IPC to open a file dialog
-      // const result = await window.electronAPI.openDirectoryDialog({ title: "Select World Folder" })
-
-      // Simulate selecting a directory
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      const mockPath = "C:\\Users\\Username\\AppData\\Roaming\\.minecraft\\saves\\My World"
-
+      // Open file dialog for world folder
+      const chosen = await window.electronAPI?.pickDirectory();
+      if (!chosen) {
+        setIsImporting(false);
+        return;
+      }
+  
+      const defaultName = chosen.split(/[\\/]/).pop() || 'New World';
+      const worldName = await window.electronAPI.showPrompt('Enter World Name', defaultName);
+      if (!worldName) {
+        setIsImporting(false);
+        return;
+      }
+  
+      // Import the world
+      const result = await window.electronAPI.importWorld(chosen, worldName);
+      if (!result.success) throw new Error(result.message);
+  
+      // Update config
       updateConfig({
-        worldPath: mockPath,
-        worldName: "My World",
+        worldPath: chosen,
+        worldName,
         importedWorld: true,
-      })
-
-      setWorldImported(true)
-    } catch (error) {
-      console.error("Failed to import world:", error)
+      });
+      setWorldImported(true);
+  
+    } catch (err: any) {
+      console.error('Import failed:', err);
+      alert('Import failed: ' + err.message);
+      setIsImporting(false);
+      setWorldImported(false);
     } finally {
-      setIsImporting(false)
+      setIsImporting(false);
     }
-  }
+  };
 
   // Handle world name change
   const handleWorldNameChange = (name: string) => {
