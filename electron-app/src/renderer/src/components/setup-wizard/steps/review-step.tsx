@@ -36,26 +36,14 @@ export function ReviewStep({ config, onComplete }: ReviewStepProps) {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
         <Card className="border-cool-gray/30 bg-night">
           <CardContent className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               <div className="space-y-4">
-                <motion.div
-                  className="flex items-center gap-3"
-                  custom={0}
-                  initial="hidden"
-                  animate="visible"
-                  variants={itemVariants}
-                >
-                  {config.isModded ? (
-                    <Blocks className="h-5 w-5 text-linen" />
-                  ) : (
-                    <Cube className="h-5 w-5 text-linen" />
-                  )}
-                  <div>
-                    <h3 className="font-medium text-linen">Server Type</h3>
-                    <p className="text-sm text-cool-gray">{config.isModded ? "Modded" : "Vanilla"} Minecraft Server</p>
-                  </div>
-                </motion.div>
-
+                
+              <div className="space-y-4">
+                <div className="flex justify-between py-2 border-b border-cool-gray/20">
+                  <span className="text-cool-gray">Server Type</span>
+                  <span className="text-linen font-medium capitalize">{config.serverType}</span>
+                </div>
                 {config.isModded && config.modpackName && (
                   <motion.div
                     className="flex items-center gap-3"
@@ -88,12 +76,6 @@ export function ReviewStep({ config, onComplete }: ReviewStepProps) {
                   </div>
                 </motion.div>
               </div>
-
-              <div className="space-y-4">
-                <div className="flex justify-between py-2 border-b border-cool-gray/20">
-                  <span className="text-cool-gray">Server Type</span>
-                  <span className="text-linen font-medium capitalize">{config.serverType}</span>
-                </div>
 
                 <motion.div
                   className="flex items-center gap-3"
