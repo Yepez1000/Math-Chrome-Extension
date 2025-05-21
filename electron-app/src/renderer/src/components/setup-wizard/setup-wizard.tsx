@@ -130,7 +130,7 @@ export function SetupWizard() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-      <Card className="w-full max-w-4xl mx-auto bg-space-cadet border-cool-gray/30 shadow-xl">
+      <Card className="w-full lg:max-w-[900px] lg:min-w-[900px] md:max-w-[800px] md:min-w-[800px] mx-auto bg-space-cadet border-cool-gray/30 shadow-xl">
         <CardHeader className="border-b border-cool-gray/20">
           <CardTitle className="text-linen">Minecraft Server Setup Wizard</CardTitle>
           <CardDescription className="text-cool-gray">Configure your server in a few simple steps</CardDescription>
@@ -165,7 +165,7 @@ export function SetupWizard() {
                   </span>
 
                   {index < visibleSteps.length - 1 && (
-                    <div className={`h-px md:w-8 sm:w-0 mx-1 ${isPast ? "bg-cool-gray" : "bg-night"}`}></div>
+                    <div className={`h-px lg:w-8 md:w-4 sm:w-0 mx-1 ${isPast ? "bg-cool-gray" : "bg-night"}`}></div>
                   )}
                 </div>
               )
