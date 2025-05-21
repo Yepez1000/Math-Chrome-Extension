@@ -1,8 +1,15 @@
 import { contextBridge } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { DirectorySelectionResponse, WorldImportParams, WorldValidationResponse, IPC_CHANNELS } from '../shared/types'
 
 // Custom APIs for renderer
 const { ipcRenderer } = require('electron');
+
+// Define the API interface for better type safety
+interface ElectronAPI {
+  pickDirectory: () => Promise<DirectorySelectionResponse>;
+  importWorld: (params: WorldImportParams) => Promise<WorldValidationResponse>;
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
@@ -12,13 +19,13 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('electronAPI', {
       // Open a native directory picker dialog
-      pickDirectory: async () => {
-        return await ipcRenderer.invoke('pick-directory');
+      pickDirectory: async (): Promise<DirectorySelectionResponse> => {
+        return await ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY);
       },
-      // Import a Minecraft world from a directory or zip file
-      importWorld: (zipPath: string, worldName: string) => 
-        ipcRenderer.invoke('import-world', zipPath, worldName),
-    })
+      // Import a Minecraft world from a directory
+      importWorld: async ({ sourcePath, worldName }: WorldImportParams): Promise<WorldValidationResponse> => 
+        await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, { sourcePath, worldName }),
+    } as ElectronAPI)
   } catch (error) {
     console.error(error)
   }
@@ -27,10 +34,17 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   // @ts-ignore (define in dts)
   window.electronAPI = {
-    pickDirectory: async () => {
-      return await ipcRenderer.invoke('pick-directory');
+    pickDirectory: async (): Promise<DirectorySelectionResponse> => {
+      return await ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY);
     },
-    importWorld: (zipPath: string, worldName: string) => 
-      ipcRenderer.invoke('import-world', zipPath, worldName),
+    importWorld: async ({ sourcePath, worldName }: WorldImportParams): Promise<WorldValidationResponse> => 
+      await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, { sourcePath, worldName }),
+  } as ElectronAPI
+}
+
+// Type declaration for TypeScript
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
   }
 }

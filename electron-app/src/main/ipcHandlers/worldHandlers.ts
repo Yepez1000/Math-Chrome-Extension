@@ -1,28 +1,53 @@
 import { ipcMain, dialog } from 'electron';
-import { join } from 'path';
+import { join, isAbsolute, normalize } from 'path';
 import fs from 'fs/promises';
+import { DirectorySelectionResponse, WorldImportParams, WorldValidationResponse, IPC_CHANNELS } from '../../shared/types';
 
 export function registerWorldHandlers() {
   // Handle directory selection
-  ipcMain.handle('pick-directory', async () => {
+  ipcMain.handle(IPC_CHANNELS.PICK_DIRECTORY, async (): Promise<DirectorySelectionResponse> => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openDirectory'],
-      title: 'Select Minecraft World Folder'
+      title: 'Select Minecraft World Folder',
+      // Security: Prevent directory traversal by normalizing path
+      defaultPath: normalize(process.cwd())
     });
-    return canceled ? null : filePaths[0];
+    
+    if (canceled || !filePaths[0]) return null;
+    
+    // Security: Ensure the path is absolute and normalized
+    const selectedPath = normalize(filePaths[0]);
+    if (!isAbsolute(selectedPath)) return null;
+    
+    return selectedPath;
   });
 
   // Handle world import
-  ipcMain.handle('import-world', async (_event, sourcePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.IMPORT_WORLD, async (_event, params: WorldImportParams): Promise<WorldValidationResponse> => {
     try {
-      // --- Validation: Check if it's a valid Minecraft world folder ---
+      // Security: Validate and normalize input path
+      if (!params?.sourcePath || typeof params.sourcePath !== 'string') {
+        return {
+          success: false,
+          message: 'Invalid source path provided'
+        };
+      }
 
+      const sourcePath = normalize(params.sourcePath);
+      if (!isAbsolute(sourcePath)) {
+        return {
+          success: false,
+          message: 'Source path must be absolute'
+        };
+      }
+
+      // --- Validation: Check if it's a valid Minecraft world folder ---
       const levelDatPath = join(sourcePath, 'level.dat');
       const regionDirPath = join(sourcePath, 'region');
       const dataDirPath = join(sourcePath, 'data');
 
       let isWorld = true;
-      let missingElements: string[] = []; // Explicitly define as string array
+      let missingElements: string[] = [];
 
       // Check for level.dat file
       try {
@@ -36,27 +61,25 @@ export function registerWorldHandlers() {
       try {
         const stats = await fs.stat(regionDirPath);
         if (!stats.isDirectory()) {
-            missingElements.push('region (not a directory)');
-            isWorld = false;
+          missingElements.push('region (not a directory)');
+          isWorld = false;
         }
       } catch {
         missingElements.push('region directory');
         isWorld = false;
       }
 
-       // Check for data directory (often present, but region is more critical)
-       // Making this check optional for broader compatibility
+      // Check for data directory (often present, but region is more critical)
       try {
         const stats = await fs.stat(dataDirPath);
         if (!stats.isDirectory()) {
-            missingElements.push('data (not a directory)');
-            isWorld = false;
+          missingElements.push('data (not a directory)');
+          isWorld = false;
         }
       } catch {
         missingElements.push('data directory');
         isWorld = false;
       }
-
 
       if (!isWorld) {
         return {
@@ -65,15 +88,18 @@ export function registerWorldHandlers() {
         };
       }
 
-      // --- End Validation ---
+      return { 
+        success: true, 
+        message: 'World folder validated.',
+        worldPath: sourcePath 
+      };
 
-      // If validation succeeds, return the path of the world folder
-      return { success: true, message: 'World folder validated.', worldPath: sourcePath };
-
-    } catch (error: any) {
-      // Catch any other errors during the process
+    } catch (error) {
       console.error('World validation failed:', error);
-      return { success: false, message: `Validation failed: ${error.message}` };
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
     }
   });
 } 

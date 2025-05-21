@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { motion } from "framer-motion"
 import { FolderOpen, Globe, Sparkles, Layers } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 import type { ServerConfig } from "../setup-wizard"
+import { WorldValidationResponse } from "@shared/types"
 
 interface WorldSetupStepProps {
   config: ServerConfig
@@ -20,6 +22,7 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
   const [selectedTab, setSelectedTab] = useState("create")
   const [isImporting, setIsImporting] = useState(false)
   const [worldImported, setWorldImported] = useState(false)
+  const { toast } = useToast()
 
   // Handle world import
   const handleImportWorld = async () => {
@@ -36,8 +39,18 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
       const worldName = chosen.split(/[\\/]/).pop() || 'New World';
   
       // Import the world
-      const result = await window.electronAPI.importWorld(chosen, worldName);
-      if (!result.success) throw new Error(result.message);
+      const result: WorldValidationResponse = await window.electronAPI.importWorld(chosen, worldName);
+      
+      if (!result.success) {
+        toast({
+          variant: "destructive",
+          title: "World Import Failed",
+          description: result.message,
+          duration: 5000, // Show for 5 seconds
+        });
+        setWorldImported(false);
+        return;
+      }
   
       // Update config
       updateConfig({
@@ -45,12 +58,24 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
         worldName,
         importedWorld: true,
       });
+      
+      toast({
+        title: "World Imported Successfully",
+        description: `World "${worldName}" has been successfully imported.`,
+        className: "bg-green-500 text-white border-none",
+        duration: 3000, // Show for 3 seconds
+      });
+      
       setWorldImported(true);
   
     } catch (err: any) {
       console.error('Import failed:', err);
-      alert('Import failed: ' + err.message);
-      setIsImporting(false);
+      toast({
+        variant: "destructive",
+        title: "Import Failed",
+        description: err.message || "Failed to import world. Please try again.",
+        duration: 5000, // Show for 5 seconds
+      });
       setWorldImported(false);
     } finally {
       setIsImporting(false);
