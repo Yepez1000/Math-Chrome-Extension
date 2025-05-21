@@ -13,7 +13,7 @@ export function registerWorldHandlers() {
   });
 
   // Handle world import
-  ipcMain.handle('import-world', async (_event, sourcePath: string, worldName: string) => {
+  ipcMain.handle('import-world', async (_event, sourcePath: string) => {
     try {
       // --- Validation: Check if it's a valid Minecraft world folder ---
 
@@ -59,39 +59,21 @@ export function registerWorldHandlers() {
 
 
       if (!isWorld) {
-        return { 
-          success: false, 
-          message: `Selected folder does not appear to be a valid Minecraft world. Missing: ${missingElements.join(', ')}.` 
+        return {
+          success: false,
+          message: `Selected folder does not appear to be a valid Minecraft world. Missing: ${missingElements.join(', ')}.`
         };
       }
 
       // --- End Validation ---
 
+      // If validation succeeds, return the path of the world folder
+      return { success: true, message: 'World folder validated.', worldPath: sourcePath };
 
-      // Path to server.properties in the selected world folder
-      const propsPath = join(sourcePath, 'server.properties');
-
-      // Try to read and update, or create if missing
-      let props = '';
-      try {
-        props = await fs.readFile(propsPath, 'utf8');
-        // Update level-name if it exists
-        if (/^level-name=/m.test(props)) {
-          props = props.replace(/^level-name=.*/m, `level-name=${worldName}`);
-        } else {
-          props += `\nlevel-name=${worldName}\n`;
-        }
-      } catch {
-        // If file doesn't exist, create it
-        props = `level-name=${worldName}\n`;
-      }
-      await fs.writeFile(propsPath, props);
-
-      return { success: true, message: 'World imported successfully!' };
     } catch (error: any) {
       // Catch any other errors during the process
-      console.error('Import process failed:', error);
-      return { success: false, message: `Import failed: ${error.message}` };
+      console.error('World validation failed:', error);
+      return { success: false, message: `Validation failed: ${error.message}` };
     }
   });
 } 
