@@ -24,9 +24,7 @@ if (process.contextIsolated) {
       // Import a Minecraft world from a directory or zip file
       importWorld: (zipPath: string, worldName: string) => 
         ipcRenderer.invoke('import-world', zipPath, worldName),
-      test: () => 'test successful',
-      showPrompt: (title: string, defaultValue: string) => 
-        ipcRenderer.invoke('show-prompt', title, defaultValue)
+      test: () => 'test successful'
     })
   } catch (error) {
     console.error(error)
@@ -43,8 +41,6 @@ if (process.contextIsolated) {
     },
     importWorld: (zipPath: string, worldName: string) => 
       ipcRenderer.invoke('import-world', zipPath, worldName),
-    test: () => 'test successful',
-    showPrompt: (title: string, defaultValue: string) => 
-      ipcRenderer.invoke('show-prompt', title, defaultValue)
+    test: () => 'test successful'
   }
 }
