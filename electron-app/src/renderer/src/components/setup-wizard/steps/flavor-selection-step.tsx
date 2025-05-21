@@ -212,7 +212,7 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
             <CardTitle className="text-center text-linen">{type.name}</CardTitle>
           </CardHeader>
           <CardContent className="pb-2">
-            <CardDescription className="text-center text-cool-gray">{type.description}</CardDescription>
+            <CardDescription className="text-center text-cool-gray md:min-h-[88px] sm:min-h-[0px]">{type.description}</CardDescription>
 
             <div className="mt-4 space-y-2 text-xs text-cool-gray">
               <div>
