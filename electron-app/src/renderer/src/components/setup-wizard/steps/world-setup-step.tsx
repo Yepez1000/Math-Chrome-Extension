@@ -10,7 +10,7 @@ import { motion } from "framer-motion"
 import { FolderOpen, Globe, Sparkles, Layers } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { ServerConfig } from "../setup-wizard"
-import { WorldValidationResponse } from "@shared/types"
+import type { WorldValidationResponse, WorldImportParams } from "@shared/types"
 
 interface WorldSetupStepProps {
   config: ServerConfig
@@ -39,7 +39,12 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
       const worldName = chosen.split(/[\\/]/).pop() || 'New World';
   
       // Import the world
-      const result: WorldValidationResponse = await window.electronAPI.importWorld(chosen, worldName);
+      const importParams: WorldImportParams = {
+        sourcePath: chosen,
+        worldName: worldName
+      };
+      
+      const result: WorldValidationResponse = await window.electronAPI.importWorld(importParams);
       
       if (!result.success) {
         toast({
@@ -52,9 +57,9 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
         return;
       }
   
-      // Update config
+      // Update config with the validated path from the result
       updateConfig({
-        worldPath: chosen,
+        worldPath: result.worldPath || chosen, // Use the validated path if available
         worldName,
         importedWorld: true,
       });
@@ -253,7 +258,18 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
                         <Globe className="h-10 w-10 text-linen" />
                       </div>
                       <h3 className="text-linen font-medium text-lg mb-1">World Imported</h3>
-                      <p className="text-cool-gray mb-2">{config.worldPath?.split("\\").pop()}</p>
+                      <div className="space-y-2 mb-4">
+                        <Label htmlFor="imported-world-name" className="text-linen">
+                          World Name
+                        </Label>
+                        <Input
+                          id="imported-world-name"
+                          value={config.worldName || ""}
+                          onChange={(e) => handleWorldNameChange(e.target.value)}
+                          placeholder="Enter world name"
+                          className="bg-space-cadet border-cool-gray/30 text-linen max-w-[300px] mx-auto"
+                        />
+                      </div>
                       <p className="text-xs text-cool-gray">{config.worldPath}</p>
                       <Button
                         variant="outline"

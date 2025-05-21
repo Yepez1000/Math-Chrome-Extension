@@ -23,8 +23,8 @@ if (process.contextIsolated) {
         return await ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY);
       },
       // Import a Minecraft world from a directory
-      importWorld: async ({ sourcePath, worldName }: WorldImportParams): Promise<WorldValidationResponse> => 
-        await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, { sourcePath, worldName }),
+      importWorld: async (params: WorldImportParams): Promise<WorldValidationResponse> => 
+        await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, { params }),
     } as ElectronAPI)
   } catch (error) {
     console.error(error)
@@ -37,8 +37,8 @@ if (process.contextIsolated) {
     pickDirectory: async (): Promise<DirectorySelectionResponse> => {
       return await ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY);
     },
-    importWorld: async ({ sourcePath, worldName }: WorldImportParams): Promise<WorldValidationResponse> => 
-      await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, { sourcePath, worldName }),
+    importWorld: async (params: WorldImportParams): Promise<WorldValidationResponse> => 
+      await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, { params }),
   } as ElectronAPI
 }
 

@@ -3,7 +3,7 @@ interface Window {
     getTempDir: () => string;
     writeTempFile: (path: string, data: string) => Promise<void>;
     pickDirectory: () => Promise<string | null>;
-    importWorld: (zipPath: string, worldName: string) => Promise<{ success: boolean; message: string }>;
+    importWorld: (params: WorldImportParams) => Promise<WorldValidationResponse>;
     test: () => string;
   }
 } 
