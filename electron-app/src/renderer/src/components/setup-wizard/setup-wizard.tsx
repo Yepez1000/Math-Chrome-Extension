@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
+import { ScrollToBottom } from "@/components/ui/scroll-to-bottom"
 
 import { DetectMinecraftStep } from "./steps/detect-minecraft-step"
 import { FlavorSelectionStep } from "./steps/flavor-selection-step"
@@ -46,6 +47,7 @@ const pageVariants = {
 export function SetupWizard() {
   const { toast } = useToast()
   const navigate = useNavigate()
+  const footerRef = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<WizardStep>("detect")
   // In the useState initialization, add a default serverType
   const [config, setConfig] = useState<ServerConfig>({
@@ -203,7 +205,7 @@ export function SetupWizard() {
             {step === "review" && <ReviewStep config={config} onComplete={startServer} />}
           </motion.div>
         </CardContent>
-        <CardFooter className="flex justify-between border-t border-cool-gray/20 pt-4">
+        <CardFooter ref={footerRef} className="flex justify-between border-t border-cool-gray/20 pt-4">
           <Button
             variant="outline"
             onClick={handleBack}
@@ -229,6 +231,7 @@ export function SetupWizard() {
           )}
         </CardFooter>
       </Card>
+      <ScrollToBottom footerRef={footerRef as React.RefObject<HTMLDivElement>} />
     </motion.div>
   )
 }
