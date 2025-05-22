@@ -4,28 +4,18 @@ import { useState } from "react"
 import { ServerStartupScreen } from "@/components/setup-wizard/server-startup-screen"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "@/hooks/use-toast"
-import type { ServerConfig } from "@/components/setup-wizard/setup-wizard"
+import { useServerConfigStore, type ServerConfig } from "@/stores/server-config-store"
 
 export default function ServerStartupPage() {
   const navigate = useNavigate()
   const { toast } = useToast()
 
-  // Mock config for demonstration purposes
-  // In a real app, this would be fetched from a store or passed via state
-  const [config] = useState<ServerConfig>({
-    minecraftPath: "C:\\Users\\Username\\AppData\\Roaming\\.minecraft",
-    isModded: false,
-    serverType: "vanilla",
-    ram: 4,
-    hostingMode: "play+host",
-    serverDirectory: "C:\\MinecraftServers\\MyServer",
-  })
+  const { config } = useServerConfigStore();
 
   return (
     <main className="container mx-auto py-10 px-4 min-h-screen flex items-center justify-center">
       <div className="w-full max-w-4xl">
         <ServerStartupScreen
-          config={config}
           onComplete={() => {
             toast({
               title: "Server started successfully",
