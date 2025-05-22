@@ -1,21 +1,23 @@
 import { ipcMain, dialog, app } from 'electron';
-import path from 'path';
+import { join, isAbsolute, normalize } from 'path';
+import { DirectorySelectionResponse, IPC_CHANNELS } from '../../shared/types';
 
 export function registerServerDirectoryHandler() {
-  ipcMain.handle('select-server-directory', async () => {
+  ipcMain.handle(IPC_CHANNELS.SELECT_SERVER_DIRECTORY, async (): Promise<DirectorySelectionResponse> => {
+    const defaultServerPath = normalize(join(app.getPath('documents'), 'EasyCraftServers'));
+    
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       title: 'Select Server Folder',
-      defaultPath: path.join(app.getPath('documents'), 'EasyCraftServers'),
+      defaultPath: defaultServerPath,
     });
+
     if (result.canceled || !result.filePaths[0]) return null;
 
-    const selectedPath = result.filePaths[0];
-    // Validation: must be absolute, no traversal
-    if (!path.isAbsolute(selectedPath)) return null;
-    // Optionally: restrict to appData/EasyCraft
-    // const easyCraftRoot = path.join(app.getPath('appData'), 'EasyCraft');
-    // if (!selectedPath.startsWith(easyCraftRoot)) return null;
+    const selectedPath = normalize(result.filePaths[0]);
+    // Security: Ensure path is absolute
+    if (!isAbsolute(selectedPath)) return null;
+
     return selectedPath;
   });
 }
