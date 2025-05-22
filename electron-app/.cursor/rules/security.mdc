@@ -1,0 +1,93 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## 🔐 EasyCraft Host – Secure Programming Guidelines
+
+### 🔒 1. **Avoid Dangerous Node.js APIs in Renderer**
+- Never expose Node.js APIs (`fs`, `child_process`, `net`, etc.) directly to the renderer.
+- Only expose specific, validated methods via **Electron’s `contextBridge`** in `preload.ts`.
+
+> ✅ Use: `ipcRenderer.invoke('start-server', options)`  
+> ❌ Avoid: `window.require('child_process')`
+
+---
+
+### 🔑 2. **Use IPC Validation and Sanitization**
+- All IPC handlers (`ipcMain.handle(...)`) must validate and sanitize input parameters.
+- Never trust input from the renderer process—assume it could be tampered with.
+
+> ✅ Example:  
+```ts
+if (typeof port !== 'number' || port < 1024 || port > 65535) throw new Error("Invalid port");
+```
+
+---
+
+### 🧼 3. **Shell Execution Rules**
+- Avoid shell injection risks:
+  - **Never** build raw shell commands from user input.
+  - Always prefer direct function calls like `spawn()` over `exec()` where possible.
+  - Escape or validate all variables if using `exec()` is absolutely necessary.
+
+---
+
+### 🗃️ 4. **World Data Access Rules**
+- All file reads/writes (e.g., server.properties, world saves) must:
+  - Use **absolute paths** and never allow directory traversal (`../../`).
+  - Be scoped to an internally-managed directory (`/appData/EasyCraft/...`).
+
+---
+
+### 🚫 5. **Block Dangerous Web Content**
+- Electron windows must:
+  - **Disable node integration** in the renderer.
+  - **Enable context isolation**.
+  - **Disallow navigation to remote URLs** (no `<webview>`, no external links unless sanitized).
+
+> ✅ Electron `webPreferences` setup:
+```ts
+webPreferences: {
+  nodeIntegration: false,
+  contextIsolation: true,
+  preload: path.join(__dirname, 'preload.js')
+}
+```
+
+---
+
+### 📬 6. **Sanitize User-Facing Output**
+- Any output shown in the UI (e.g., log outputs, ngrok links, Minecraft paths) must be:
+  - Escaped properly in React (`dangerouslySetInnerHTML` must be avoided).
+  - Validated before being rendered.
+
+---
+
+### 🔐 7. **Secrets and API Keys**
+- Do not hardcode ngrok tokens or CurseForge API keys into the frontend.
+- Use a `.env` file (ignored in version control) or compile-time injection via Electron/Vite secure channels.
+- If credentials are needed, encrypt and store them securely in a config file (`appData` or encrypted store).
+
+---
+
+### 🔄 8. **Auto-Update Safety**
+- All update URLs must be **HTTPS-only** and code-signed before installation.
+- Validate update metadata before initiating download.
+
+---
+
+### 🕵️ 9. **Crash and Analytics Rules**
+- All crash logs or performance metrics:
+  - Must be **anonymous** — no usernames, IPs, file paths, etc.
+  - Should be opt-out or opt-in per GDPR-style consent.
+  - Must be rate-limited and securely transmitted (HTTPS).
+
+---
+
+### 🧪 10. **Code Reviews + Secure Linting**
+- All PRs must be reviewed by at least one other dev.
+- Use ESLint + `eslint-plugin-security` to catch common issues.
+- High-risk files (`ipcHandlers/`, `electron/main.ts`, `child_process` usage) require extra scrutiny.
+
+---

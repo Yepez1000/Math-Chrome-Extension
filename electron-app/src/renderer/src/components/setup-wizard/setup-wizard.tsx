@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
+import { ScrollToBottom } from "@/components/ui/scroll-to-bottom"
 
 import { DetectMinecraftStep } from "./steps/detect-minecraft-step"
 import { FlavorSelectionStep } from "./steps/flavor-selection-step"
@@ -46,6 +47,7 @@ const pageVariants = {
 export function SetupWizard() {
   const { toast } = useToast()
   const navigate = useNavigate()
+  const footerRef = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<WizardStep>("detect")
   // In the useState initialization, add a default serverType
   const [config, setConfig] = useState<ServerConfig>({
@@ -130,7 +132,7 @@ export function SetupWizard() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-      <Card className="w-full max-w-4xl mx-auto bg-space-cadet border-cool-gray/30 shadow-xl">
+      <Card className="w-full lg:max-w-[900px] lg:min-w-[900px] md:max-w-[800px] md:min-w-[800px] mx-auto bg-space-cadet border-cool-gray/30 shadow-xl">
         <CardHeader className="border-b border-cool-gray/20">
           <CardTitle className="text-linen">Minecraft Server Setup Wizard</CardTitle>
           <CardDescription className="text-cool-gray">Configure your server in a few simple steps</CardDescription>
@@ -158,21 +160,21 @@ export function SetupWizard() {
                     {index + 1}
                   </motion.div>
                   <span
-                    className={`ml-2 text-sm hidden md:block
+                    className={`ml-2 text-sm hidden sm:block
                       ${isActive ? "text-linen font-medium" : isPast ? "text-cool-gray" : "text-cool-gray/60"}`}
                   >
                     {s.label}
                   </span>
 
                   {index < visibleSteps.length - 1 && (
-                    <div className={`h-px w-8 md:w-12 mx-1 ${isPast ? "bg-cool-gray" : "bg-night"}`}></div>
+                    <div className={`h-px lg:w-8 md:w-4 sm:w-0 mx-1 ${isPast ? "bg-cool-gray" : "bg-night"}`}></div>
                   )}
                 </div>
               )
             })}
           </div>
         </CardHeader>
-        <CardContent className="min-h-[400px] pt-6">
+        <CardContent className="md:min-h-[200px] lg:min-h-[400px] pt-6">
           <motion.div
             key={step}
             initial="initial"
@@ -203,7 +205,7 @@ export function SetupWizard() {
             {step === "review" && <ReviewStep config={config} onComplete={startServer} />}
           </motion.div>
         </CardContent>
-        <CardFooter className="flex justify-between border-t border-cool-gray/20 pt-4">
+        <CardFooter ref={footerRef} className="flex justify-between border-t border-cool-gray/20 pt-4">
           <Button
             variant="outline"
             onClick={handleBack}
@@ -229,6 +231,7 @@ export function SetupWizard() {
           )}
         </CardFooter>
       </Card>
+      <ScrollToBottom footerRef={footerRef as React.RefObject<HTMLDivElement>} />
     </motion.div>
   )
 }
