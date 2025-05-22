@@ -38,6 +38,8 @@ const initialConfig: ServerConfig = {
   serverDirectory: "C:\\MinecraftServers\\MyServer",
 }
 
+const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
+
 export const useServerConfigStore = create<ServerConfigState>((set, get) => ({
   config: initialConfig,
   currentStep: "detect",
@@ -51,7 +53,6 @@ export const useServerConfigStore = create<ServerConfigState>((set, get) => ({
 
   nextStep: () => {
     const { currentStep, config } = get()
-    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
     const currentIndex = stepOrder.indexOf(currentStep)
 
     // Skip modpack step if vanilla is selected
@@ -67,7 +68,6 @@ export const useServerConfigStore = create<ServerConfigState>((set, get) => ({
 
   previousStep: () => {
     const { currentStep, config } = get()
-    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
     const currentIndex = stepOrder.indexOf(currentStep)
 
     // Skip modpack step if vanilla is selected when going back
