@@ -7,14 +7,14 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { motion, AnimatePresence } from "framer-motion"
 import { CuboidIcon as Cube, Cpu, Zap, Leaf, Hammer, Feather, Archive} from "lucide-react"
-import { useServerConfigStore } from "@/stores/server-config-store"
+import { useServerConfigStore, ServerConfig } from "@/stores/server-config-store"
 import { useFlavorSelectionStore } from "@/stores/step-stores"
 
 interface FlavorSelectionStepProps {
   onComplete: () => void
 }
 
-type ServerType = "vanilla" | "paper" | "forge" | "spigot" | "fabric" | "bukkit"
+type ServerType = ServerConfig["serverType"]
 
 type ServerTypeInfo = {
   id: ServerType
