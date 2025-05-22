@@ -1,4 +1,5 @@
-import { useState } from "react"
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,19 +10,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { motion } from "framer-motion"
 import { FolderOpen, Globe, Sparkles, Layers } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import type { ServerConfig } from "../setup-wizard"
+import { useServerConfigStore } from "@/stores/server-config-store"
+import { useWorldSetupStore } from "@/stores/step-stores"
 import type { WorldValidationResponse, WorldImportParams } from "@shared/types"
 
 interface WorldSetupStepProps {
-  config: ServerConfig
-  updateConfig: (updates: Partial<ServerConfig>) => void
   onComplete: () => void
 }
 
-export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupStepProps) {
-  const [selectedTab, setSelectedTab] = useState("create")
-  const [isImporting, setIsImporting] = useState(false)
-  const [worldImported, setWorldImported] = useState(false)
+export function WorldSetupStep({ onComplete }: WorldSetupStepProps) {
+  const { config, updateConfig } = useServerConfigStore()
+  const { selectedTab, setSelectedTab, isImporting, setIsImporting, worldImported, setWorldImported } = useWorldSetupStore()
   const { toast } = useToast()
 
   // Handle world import
@@ -248,37 +247,20 @@ export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupS
                       <p className="mt-4 text-xs text-cool-gray">Typically located in .minecraft/saves/ folder</p>
                     </>
                   ) : (
-                    <motion.div
-                      className="text-center"
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                    >
-                      <div className="bg-linen/10 p-3 rounded-full inline-flex mb-4">
-                        <Globe className="h-10 w-10 text-linen" />
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-linen/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Globe className="h-8 w-8 text-linen" />
                       </div>
-                      <h3 className="text-linen font-medium text-lg mb-1">World Imported</h3>
-                      <div className="space-y-2 mb-4">
-                        <Label htmlFor="imported-world-name" className="text-linen">
-                          World Name
-                        </Label>
-                        <Input
-                          id="imported-world-name"
-                          value={config.worldName || ""}
-                          onChange={(e) => handleWorldNameChange(e.target.value)}
-                          placeholder="Enter world name"
-                          className="bg-space-cadet border-cool-gray/30 text-linen max-w-[300px] mx-auto"
-                        />
-                      </div>
-                      <p className="text-xs text-cool-gray">{config.worldPath}</p>
+                      <h3 className="text-lg font-medium text-linen mb-2">World Imported Successfully</h3>
+                      <p className="text-cool-gray mb-4">{config.worldName}</p>
                       <Button
-                        variant="outline"
                         onClick={handleImportWorld}
-                        className="mt-4 border-cool-gray text-linen hover:bg-cool-gray/10"
+                        variant="outline"
+                        className="border-cool-gray/30 text-linen hover:bg-cool-gray/10"
                       >
-                        Change World
+                        Import Different World
                       </Button>
-                    </motion.div>
+                    </div>
                   )}
                 </div>
               </CardContent>

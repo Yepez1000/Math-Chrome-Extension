@@ -1,28 +1,23 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Input } from "@/components/ui/input"
 import { motion } from "framer-motion"
-import type { ServerConfig } from "../setup-wizard"
-// Import the CheckCircle icon
 import { MemoryStickIcon as Memory, FolderOpen, AlertCircle, CheckCircle } from "lucide-react"
+import { useServerConfigStore } from "@/stores/server-config-store"
+import { usePerformanceSettingsStore } from "@/stores/step-stores"
 
 interface PerformanceSettingsStepProps {
-  config: ServerConfig
-  updateConfig: (updates: Partial<ServerConfig>) => void
   onComplete: () => void
 }
 
-export function PerformanceSettingsStep({ config, updateConfig, onComplete }: PerformanceSettingsStepProps) {
-  const [systemInfo, setSystemInfo] = useState({
-    totalRam: 16384, // MB (16 GB)
-    cpuCores: 8,
-    availableRam: 12288, // MB (12 GB)
-  })
+export function PerformanceSettingsStep({ onComplete }: PerformanceSettingsStepProps) {
+  const { config, updateConfig } = useServerConfigStore()
+  const { systemInfo, setSystemInfo } = usePerformanceSettingsStore()
 
   // Helper to get the middle value of the recommended RAM range
   const getRecommendedRamMiddle = () => {

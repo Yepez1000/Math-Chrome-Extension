@@ -1,15 +1,18 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { motion } from "framer-motion"
-import type { ServerConfig } from "../setup-wizard"
 import { Check, CuboidIcon as Cube, Blocks, MemoryStickIcon as Memory, Cpu, FolderOpen, Globe } from "lucide-react"
+import { useServerConfigStore } from "@/stores/server-config-store"
 
 interface ReviewStepProps {
-  config: ServerConfig
   onComplete: () => void
 }
 
-export function ReviewStep({ config, onComplete }: ReviewStepProps) {
+export function ReviewStep({ onComplete }: ReviewStepProps) {
+  const { config } = useServerConfigStore()
+
   const itemVariants = {
     hidden: { opacity: 0, x: -20 },
     visible: (i: number) => ({

@@ -1,26 +1,34 @@
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { motion, AnimatePresence } from "framer-motion"
 import { Loader2, CheckCircle, XCircle, Copy, ExternalLink, AlertTriangle } from "lucide-react"
 import { useToast } from "@renderer/hooks/use-toast"
-import type { ServerConfig } from "./setup-wizard"
+import { useServerConfigStore } from "@/stores/server-config-store"
+import { useServerStartupStore } from "@/stores/server-startup-store"
 
 interface ServerStartupScreenProps {
-  config: ServerConfig
   onComplete: () => void
   onRetry: () => void
 }
 
-export function ServerStartupScreen({ config, onComplete, onRetry }: ServerStartupScreenProps) {
+export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreenProps) {
   const { toast } = useToast()
-  const [statusMessages, setStatusMessages] = useState<
-    Array<{ message: string; status: "pending" | "success" | "error" }>
-  >([])
-  const [currentStep, setCurrentStep] = useState(0)
-  const [isComplete, setIsComplete] = useState(false)
-  const [isError, setIsError] = useState(false)
-  const [dnsAddress, setDnsAddress] = useState<string | null>(null)
+  const config = useServerConfigStore((state) => state.config)
+  const {
+    statusMessages,
+    currentStep,
+    isComplete,
+    isError,
+    dnsAddress,
+    addStatusMessage,
+    updateLastStatusMessage,
+    setCurrentStep,
+    setIsComplete,
+    setIsError,
+    setDnsAddress,
+    reset,
+  } = useServerStartupStore()
 
   // Define the startup steps
   const startupSteps = [
@@ -49,25 +57,25 @@ export function ServerStartupScreen({ config, onComplete, onRetry }: ServerStart
       handler: "getPlayitAddress",
       error: "Failed to retrieve your server address. Please try again."
     }
-  ];
+  ]
 
   // Mock IPC calls with artificial delays
   const mockIpcCalls = async (handler: string) => {
     // Simulate processing time
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    // Simulate a random failure for testing (100% chance for demo)
-    const shouldFail = Math.random() < .1;
+    // Simulate a random failure for testing (10% chance)
+    const shouldFail = Math.random() < 0.1
 
     if (shouldFail) {
-      throw new Error(); // Error message is now handled in startupSteps
+      throw new Error()
     }
 
     if (handler === "getPlayitAddress") {
-      return "mc-server-12345.playit.gg:25565";
+      return "mc-server-12345.playit.gg:25565"
     }
 
-    return true;
+    return true
   }
 
   // Function to execute a step
@@ -79,16 +87,14 @@ export function ServerStartupScreen({ config, onComplete, onRetry }: ServerStart
     const step = startupSteps[stepIndex]
 
     // Add the step to status messages as pending
-    setStatusMessages((prev) => [...prev, { message: step.message, status: "pending" }])
+    addStatusMessage({ message: step.message, status: "pending" })
 
     try {
       // Call the mock IPC handler
       const result = await mockIpcCalls(step.handler)
 
       // Update the status message to success
-      setStatusMessages((prev) =>
-        prev.map((msg, idx) => (idx === prev.length - 1 ? { ...msg, status: "success" } : msg)),
-      )
+      updateLastStatusMessage("success")
 
       // If this is the last step, save the DNS address
       if (stepIndex === startupSteps.length - 1 && typeof result === "string") {
@@ -100,27 +106,24 @@ export function ServerStartupScreen({ config, onComplete, onRetry }: ServerStart
       executeStep(stepIndex + 1)
     } catch (error) {
       // Update the status message to error
-      setStatusMessages((prev) => prev.map((msg, idx) => (idx === prev.length - 1 ? { ...msg, status: "error" } : msg)));
+      updateLastStatusMessage("error")
 
       // Add error message from step definition
-      setStatusMessages((prev) => [
-        ...prev,
-        {
-          message: `Error: ${step.error}${error instanceof Error && error.message ? ` (${error.message})` : ""}`,
-          status: "error",
-        },
-      ]);
+      addStatusMessage({
+        message: `Error: ${step.error}${error instanceof Error && error.message ? ` (${error.message})` : ""}`,
+        status: "error",
+      })
 
-      setIsError(true);
+      setIsError(true)
     }
   }
 
   // Start the sequence when component mounts
-  const hasRun = useRef(false);
+  const hasRun = useRef(false)
   useEffect(() => {
     if (!hasRun.current) {
-      executeStep(0);
-      hasRun.current = true;
+      executeStep(0)
+      hasRun.current = true
     }
   }, [])
 
@@ -137,11 +140,7 @@ export function ServerStartupScreen({ config, onComplete, onRetry }: ServerStart
 
   // Handle retry
   const handleRetry = () => {
-    setStatusMessages([])
-    setCurrentStep(0)
-    setIsComplete(false)
-    setIsError(false)
-    setDnsAddress(null)
+    reset()
     onRetry()
     executeStep(0)
   }
@@ -250,21 +249,18 @@ export function ServerStartupScreen({ config, onComplete, onRetry }: ServerStart
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
-                    transition={{ duration: 0.5, delay: 0.3 }}
+                    transition={{ duration: 0.5 }}
                     className="mt-6 pt-4 border-t border-cool-gray/20"
                   >
                     <div className="space-y-4">
-                      <div className="flex items-start gap-3 bg-night/50 p-3 rounded border border-cool-gray/20">
-                        <AlertTriangle className="h-5 w-5 text-linen mt-0.5" />
-                        <div>
-                          <h4 className="text-linen font-medium">Launch Failed</h4>
-                          <p className="text-sm text-cool-gray">
-                            We encountered an issue while setting up your server. You can try again or check the logs
-                            for more details.
-                          </p>
-                        </div>
+                      <div className="flex items-center gap-2 text-red-400">
+                        <AlertTriangle className="h-5 w-5" />
+                        <span>Server launch failed</span>
                       </div>
-
+                      <p className="text-cool-gray">
+                        We encountered an issue while setting up your server. You can try again or contact support if the
+                        problem persists.
+                      </p>
                       <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
                         <Button onClick={handleRetry} className="w-full bg-linen text-night hover:bg-linen/90">
                           Try Again
