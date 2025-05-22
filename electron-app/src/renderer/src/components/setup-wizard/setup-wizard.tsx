@@ -1,12 +1,11 @@
-"use client"
-
-import { useState, useRef } from "react"
+import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import { ScrollToBottom } from "@/components/ui/scroll-to-bottom"
+import { useServerConfigStore } from "@/stores/server-config-store"
 
 import { DetectMinecraftStep } from "./steps/detect-minecraft-step"
 import { FlavorSelectionStep } from "./steps/flavor-selection-step"
@@ -14,28 +13,6 @@ import { ModpackSelectionStep } from "./steps/modpack-selection-step"
 import { PerformanceSettingsStep } from "./steps/performance-settings-step"
 import { ReviewStep } from "./steps/review-step"
 import { WorldSetupStep } from "./steps/world-setup-step"
-
-// Update the WizardStep type to include the new world step
-export type WizardStep = "detect" | "flavor" | "modpack" | "world" | "performance" | "review"
-
-// Update the ServerConfig type to include serverType
-export type ServerConfig = {
-  minecraftPath: string | null
-  isModded: boolean
-  serverType: "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit"
-  modpackPath?: string
-  modpackName?: string
-  ram: number
-  hostingMode: "play+host" | "host"
-  javaPath?: string
-  serverDirectory?: string
-  worldPath?: string
-  worldName?: string
-  worldSeed?: string
-  worldType?: string
-  generateStructures?: boolean
-  importedWorld?: boolean
-}
 
 // Animation variants for page transitions
 const pageVariants = {
@@ -48,19 +25,11 @@ export function SetupWizard() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const footerRef = useRef<HTMLDivElement>(null)
-  const [step, setStep] = useState<WizardStep>("detect")
-  // In the useState initialization, add a default serverType
-  const [config, setConfig] = useState<ServerConfig>({
-    minecraftPath: "C:\\Users\\Username\\AppData\\Roaming\\.minecraft", // Pre-filled for testing
-    isModded: false,
-    serverType: "vanilla", // Default server type
-    ram: 4,
-    hostingMode: "play+host",
-    serverDirectory: "C:\\MinecraftServers\\MyServer", // Pre-filled for testing
-  })
+  
+  const { config, currentStep, updateConfig, nextStep, previousStep } = useServerConfigStore()
 
-  // In the SetupWizard component, update the steps array to include the world step
-  const steps: { id: WizardStep; label: string; isVisible: boolean }[] = [
+  // Define the steps array
+  const steps = [
     { id: "detect", label: "Detect", isVisible: true },
     { id: "flavor", label: "Server Type", isVisible: true },
     { id: "modpack", label: "Modpack", isVisible: config.isModded },
@@ -71,42 +40,6 @@ export function SetupWizard() {
 
   // Get only visible steps
   const visibleSteps = steps.filter((s) => s.isVisible)
-
-  // Update the handleNext function to include the world step
-  const handleNext = () => {
-    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
-    const currentIndex = stepOrder.indexOf(step)
-
-    // Skip modpack step if vanilla is selected
-    if (step === "flavor" && !config.isModded) {
-      setStep("world")
-      return
-    }
-
-    if (currentIndex < stepOrder.length - 1) {
-      setStep(stepOrder[currentIndex + 1])
-    }
-  }
-
-  // Update the handleBack function to include the world step
-  const handleBack = () => {
-    const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
-    const currentIndex = stepOrder.indexOf(step)
-
-    // Skip modpack step if vanilla is selected when going back
-    if (step === "world" && !config.isModded) {
-      setStep("flavor")
-      return
-    }
-
-    if (currentIndex > 0) {
-      setStep(stepOrder[currentIndex - 1])
-    }
-  }
-
-  const updateConfig = (updates: Partial<ServerConfig>) => {
-    setConfig((prev) => ({ ...prev, ...updates }))
-  }
 
   const startServer = async () => {
     try {
@@ -127,7 +60,7 @@ export function SetupWizard() {
 
   // Get current step index (for breadcrumb)
   const getCurrentStepIndex = () => {
-    return visibleSteps.findIndex((s) => s.id === step)
+    return visibleSteps.findIndex((s) => s.id === currentStep)
   }
 
   return (
@@ -140,7 +73,7 @@ export function SetupWizard() {
           {/* Breadcrumb-style progress indicator */}
           <div className="flex items-center justify-between mt-6">
             {visibleSteps.map((s, index) => {
-              const isActive = s.id === step
+              const isActive = s.id === currentStep
               const isPast = getCurrentStepIndex() > index
 
               return (
@@ -176,48 +109,49 @@ export function SetupWizard() {
         </CardHeader>
         <CardContent className="md:min-h-[200px] lg:min-h-[400px] pt-6">
           <motion.div
-            key={step}
+            key={currentStep}
             initial="initial"
             animate="animate"
             exit="exit"
             variants={pageVariants}
             transition={{ duration: 0.3 }}
           >
-            {step === "detect" && (
-              <DetectMinecraftStep config={config} updateConfig={updateConfig} onComplete={() => setStep("flavor")} />
+            {currentStep === "detect" && (
+              <DetectMinecraftStep config={config} updateConfig={updateConfig} onComplete={nextStep} />
             )}
 
-            {step === "flavor" && (
-              <FlavorSelectionStep config={config} updateConfig={updateConfig} onComplete={handleNext} />
+            {currentStep === "flavor" && (
+              <FlavorSelectionStep onComplete={nextStep} />
             )}
 
-            {step === "modpack" && (
-              <ModpackSelectionStep config={config} updateConfig={updateConfig} onComplete={handleNext} />
+            {currentStep === "modpack" && (
+              <ModpackSelectionStep onComplete={nextStep} />
             )}
 
-            {/* In the render section, add the WorldSetupStep component */}
-            {step === "world" && <WorldSetupStep config={config} updateConfig={updateConfig} onComplete={handleNext} />}
-
-            {step === "performance" && (
-              <PerformanceSettingsStep config={config} updateConfig={updateConfig} onComplete={handleNext} />
+            {currentStep === "world" && (
+              <WorldSetupStep onComplete={nextStep} />
             )}
 
-            {step === "review" && <ReviewStep config={config} onComplete={startServer} />}
+            {currentStep === "performance" && (
+              <PerformanceSettingsStep onComplete={nextStep} />
+            )}
+
+            {currentStep === "review" && <ReviewStep onComplete={startServer} />}
           </motion.div>
         </CardContent>
         <CardFooter ref={footerRef} className="flex justify-between border-t border-cool-gray/20 pt-4">
           <Button
             variant="outline"
-            onClick={handleBack}
-            disabled={step === "detect"}
+            onClick={previousStep}
+            disabled={currentStep === "detect"}
             className="border-cool-gray text-linen hover:bg-cool-gray/10 bg-night"
           >
             Back
           </Button>
 
-          {step !== "review" ? (
+          {currentStep !== "review" ? (
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button onClick={handleNext} className="bg-linen hover:bg-linen/90 text-night">
+              <Button onClick={nextStep} className="bg-linen hover:bg-linen/90 text-night">
                 Next
               </Button>
             </motion.div>
