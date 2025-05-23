@@ -1,23 +1,23 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { motion, AnimatePresence } from "framer-motion"
-import type { ServerConfig } from "../setup-wizard"
 import { CuboidIcon as Cube, Cpu, Zap, Leaf, Hammer, Feather, Archive} from "lucide-react"
+import { useServerConfigStore, ServerConfig } from "@/stores/server-config-store"
+import { useFlavorSelectionStore } from "@/stores/step-stores"
 
 interface FlavorSelectionStepProps {
-  config: ServerConfig
-  updateConfig: (updates: Partial<ServerConfig>) => void
   onComplete: () => void
 }
 
+type ServerType = ServerConfig["serverType"]
+
 type ServerTypeInfo = {
-  id: ServerConfig["serverType"]
+  id: ServerType
   name: string
   description: string
   icon: React.ElementType
@@ -28,81 +28,199 @@ type ServerTypeInfo = {
   recommended?: boolean
 }
 
-export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStepProps) {
-  const [selectedType, setSelectedType] = useState<ServerConfig["serverType"]>(config.serverType)
-  const [carouselPage, setCarouselPage] = useState<1 | 2>(1)
-  const [isAnimating, setIsAnimating] = useState(false)
+// Server type data moved outside component to avoid recreation
+const serverTypes: ServerTypeInfo[] = [
+  {
+    id: "vanilla",
+    name: "Vanilla",
+    description: "The unmodified, official Minecraft experience as provided by Mojang.",
+    icon: Cube,
+    isModded: false,
+    performance: 3,
+    plugins: false,
+    mods: false,
+    recommended: true,
+  },
+  {
+    id: "paper",
+    name: "Paper",
+    description: "An optimized fork of Spigot, offering better performance and additional configuration options.",
+    icon: Leaf,
+    isModded: false,
+    performance: 5,
+    plugins: true,
+    mods: false,
+  },
+  {
+    id: "forge",
+    name: "Forge",
+    description: "A modding platform that allows the addition of custom mods to the game.",
+    icon: Hammer,
+    isModded: true,
+    performance: 2,
+    plugins: false,
+    mods: true,
+  },
+  {
+    id: "spigot",
+    name: "Spigot",
+    description: "A high-performance fork of Bukkit, supporting plugins to enhance gameplay.",
+    icon: Zap,
+    isModded: false,
+    performance: 4,
+    plugins: true,
+    mods: false,
+  },
+  {
+    id: "fabric",
+    name: "Fabric",
+    description: "A lightweight, modular modding platform known for its quick updates and performance.",
+    icon: Feather,
+    isModded: true,
+    performance: 3,
+    plugins: false,
+    mods: true,
+  },
+  {
+    id: "bukkit",
+    name: "Bukkit",
+    description: "An older, plugin-based server platform that laid the foundation for Spigot and Paper.",
+    icon: Archive,
+    isModded: false,
+    performance: 3,
+    plugins: true,
+    mods: false,
+  },
+]
 
-  const serverTypes: ServerTypeInfo[] = [
-    {
-      id: "vanilla",
-      name: "Vanilla",
-      description: "The unmodified, official Minecraft experience as provided by Mojang.",
-      icon: Cube,
-      isModded: false,
-      performance: 3,
-      plugins: false,
-      mods: false,
-      recommended: true,
+// Animation variants moved outside component
+const pageVariants = {
+  hidden: {
+    opacity: 0,
+    y: 50,
+  },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.3,
+      ease: "easeOut",
+      staggerChildren: 0.05,
     },
-    {
-      id: "paper",
-      name: "Paper",
-      description: "An optimized fork of Spigot, offering better performance and additional configuration options.",
-      icon: Leaf,
-      isModded: false,
-      performance: 5,
-      plugins: true,
-      mods: false,
+  },
+  exit: {
+    opacity: 0,
+    transition: {
+      duration: 0.2,
+      ease: "easeIn",
     },
-    {
-      id: "forge",
-      name: "Forge",
-      description: "A modding platform that allows the addition of custom mods to the game.",
-      icon: Hammer,
-      isModded: true,
-      performance: 2,
-      plugins: false,
-      mods: true,
+  },
+}
+
+const itemVariants = {
+  hidden: {
+    opacity: 0,
+    y: 20,
+  },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.3,
+      ease: "easeOut",
     },
-    {
-      id: "spigot",
-      name: "Spigot",
-      description: "A high-performance fork of Bukkit, supporting plugins to enhance gameplay.",
-      icon: Zap,
-      isModded: false,
-      performance: 4,
-      plugins: true,
-      mods: false,
-    },
-    {
-      id: "fabric",
-      name: "Fabric",
-      description: "A lightweight, modular modding platform known for its quick updates and performance.",
-      icon: Feather,
-      isModded: true,
-      performance: 3,
-      plugins: false,
-      mods: true,
-    },
-    {
-      id: "bukkit",
-      name: "Bukkit",
-      description: "An older, plugin-based server platform that laid the foundation for Spigot and Paper.",
-      icon: Archive,
-      isModded: false,
-      performance: 3,
-      plugins: true,
-      mods: false,
-    },
-  ]
+  },
+}
+
+// Performance bars component
+const PerformanceBars = ({ level }: { level: number }) => (
+  <div className="flex gap-1 mt-2">
+    {[1, 2, 3, 4, 5].map((bar) => (
+      <div key={bar} className={`h-1.5 w-full rounded-full ${bar <= level ? "bg-linen" : "bg-cool-gray/30"}`} />
+    ))}
+  </div>
+)
+
+// Server type card component
+const ServerTypeCard = ({ type, isSelected, onSelect }: { type: ServerTypeInfo; isSelected: boolean; onSelect: () => void }) => {
+  const Icon = type.icon
+  return (
+    <motion.div variants={itemVariants} whileHover="active" className="relative">
+      {type.recommended && (
+        <div className="absolute -top-1 -right-1 z-10">
+          <div className="bg-linen text-night text-xs font-bold py-1 px-2 rounded-md transform rotate-3 shadow-md">
+            Recommended for Beginners
+          </div>
+        </div>
+      )}
+      <Card
+        className={`cursor-pointer transition-all hover:border-linen h-full ${
+          isSelected ? "border-linen bg-linen/5" : "border-cool-gray/30 bg-night"
+        }`}
+        onClick={onSelect}
+      >
+        <CardHeader className="pb-2">
+          <motion.div
+            className="flex justify-center mb-2"
+            animate={{ rotate: isSelected ? [0, 5, 0, -5, 0] : 0 }}
+            transition={{ duration: 0.5, delay: 0.2, repeat: isSelected ? 1 : 0 }}
+          >
+            <Icon className={`h-10 w-10 ${isSelected ? "text-linen" : "text-cool-gray"}`} />
+          </motion.div>
+          <CardTitle className="text-center text-linen">{type.name}</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-2">
+          <CardDescription className="text-center text-cool-gray lg:min-h-[88px] md:min-h-[110px] sm:min-h-[0px]">{type.description}</CardDescription>
+
+          <div className="mt-4 space-y-2 text-xs text-cool-gray">
+            <div>
+              <div className="flex justify-between mb-1">
+                <span>Performance</span>
+                <span className="text-linen">
+                  {["Low", "Moderate", "Good", "High", "Excellent"][type.performance - 1]}
+                </span>
+              </div>
+              <PerformanceBars level={type.performance} />
+            </div>
+
+            <div className="flex justify-between pt-2">
+              <span className={`${type.plugins ? "text-linen" : "text-cool-gray/50"}`}>
+                {type.plugins ? "✓ Plugin Support" : "✗ No Plugins"}
+              </span>
+              <span className={`${type.mods ? "text-linen" : "text-cool-gray/50"}`}>
+                {type.mods ? "✓ Mod Support" : "✗ No Mods"}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter className="flex justify-center pt-2">
+          <Button
+            variant={isSelected ? "default" : "outline"}
+            onClick={onSelect}
+            className={`w-full ${
+              isSelected
+                ? "bg-linen text-night hover:bg-linen/90"
+                : "border-cool-gray text-linen hover:bg-cool-gray/10 bg-night"
+            }`}
+          >
+            Select {type.name}
+          </Button>
+        </CardFooter>
+      </Card>
+    </motion.div>
+  )
+}
+
+export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
+  const { config, updateConfig } = useServerConfigStore()
+  const { selectedType, setSelectedType, carouselPage, setCarouselPage, isAnimating, setIsAnimating } = useFlavorSelectionStore()
 
   // Page 1: Vanilla, Paper, Forge
   // Page 2: Spigot, Fabric, Bukkit
   const page1Types = serverTypes.slice(0, 3)
   const page2Types = serverTypes.slice(3, 6)
 
-  const handleServerTypeSelect = (type: ServerConfig["serverType"]) => {
+  const handleServerTypeSelect = (type: ServerType) => {
     setSelectedType(type)
     const serverTypeInfo = serverTypes.find((t) => t.id === type)
     if (serverTypeInfo) {
@@ -131,128 +249,6 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
     }
   }
 
-  // New animation variants
-  const pageVariants = {
-    hidden: {
-      opacity: 0,
-      y: 50,
-    },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.3,
-        ease: "easeOut",
-        staggerChildren: 0.05,
-      },
-    },
-    exit: {
-      opacity: 0,
-      transition: {
-        duration: 0.2,
-        ease: "easeIn",
-      },
-    },
-  }
-
-  const itemVariants = {
-    hidden: {
-      opacity: 0,
-      y: 20,
-    },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.3,
-        ease: "easeOut",
-      },
-    },
-  }
-
-  // Helper function to render performance bars
-  const renderPerformanceBars = (level: number) => {
-    return (
-      <div className="flex gap-1 mt-2">
-        {[1, 2, 3, 4, 5].map((bar) => (
-          <div key={bar} className={`h-1.5 w-full rounded-full ${bar <= level ? "bg-linen" : "bg-cool-gray/30"}`} />
-        ))}
-      </div>
-    )
-  }
-
-  // Helper function to render a server type card
-  const renderServerTypeCard = (type: ServerTypeInfo, index: number) => {
-    const isSelected = selectedType === type.id
-    const Icon = type.icon
-
-    return (
-      <motion.div key={type.id} variants={itemVariants} whileHover="active" custom={index} className="relative">
-        {type.recommended && (
-          <div className="absolute -top-1 -right-1 z-10">
-            <div className="bg-linen text-night text-xs font-bold py-1 px-2 rounded-md transform rotate-3 shadow-md">
-              Recommended for Beginners
-            </div>
-          </div>
-        )}
-        <Card
-          className={`cursor-pointer transition-all hover:border-linen h-full ${
-            isSelected ? "border-linen bg-linen/5" : "border-cool-gray/30 bg-night"
-          }`}
-          onClick={() => handleServerTypeSelect(type.id)}
-        >
-          <CardHeader className="pb-2">
-            <motion.div
-              className="flex justify-center mb-2"
-              animate={{ rotate: isSelected ? [0, 5, 0, -5, 0] : 0 }}
-              transition={{ duration: 0.5, delay: 0.2, repeat: isSelected ? 1 : 0 }}
-            >
-              <Icon className={`h-10 w-10 ${isSelected ? "text-linen" : "text-cool-gray"}`} />
-            </motion.div>
-            <CardTitle className="text-center text-linen">{type.name}</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-2">
-            <CardDescription className="text-center text-cool-gray lg:min-h-[88px] md:min-h-[110px] sm:min-h-[0px]">{type.description}</CardDescription>
-
-            <div className="mt-4 space-y-2 text-xs text-cool-gray">
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span>Performance</span>
-                  <span className="text-linen">
-                    {["Low", "Moderate", "Good", "High", "Excellent"][type.performance - 1]}
-                  </span>
-                </div>
-                {renderPerformanceBars(type.performance)}
-              </div>
-
-              <div className="flex justify-between pt-2">
-                <span className={`${type.plugins ? "text-linen" : "text-cool-gray/50"}`}>
-                  {type.plugins ? "✓ Plugin Support" : "✗ No Plugins"}
-                </span>
-                <span className={`${type.mods ? "text-linen" : "text-cool-gray/50"}`}>
-                  {type.mods ? "✓ Mod Support" : "✗ No Mods"}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-center pt-2">
-            <Button
-              variant={isSelected ? "default" : "outline"}
-              onClick={() => handleServerTypeSelect(type.id)}
-              className={`w-full ${
-                isSelected
-                  ? "bg-linen text-night hover:bg-linen/90"
-                  : "border-cool-gray text-linen hover:bg-cool-gray/10 bg-night"
-              }`}
-            >
-              Select {type.name}
-            </Button>
-          </CardFooter>
-        </Card>
-      </motion.div>
-    )
-  }
-
   return (
     <div className="space-y-8">
       <motion.div
@@ -266,7 +262,6 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
       </motion.div>
 
       <div className="relative overflow-hidden py-3">
-        {/* Carousel Container */}
         <AnimatePresence initial={false} mode="wait" onExitComplete={() => setIsAnimating(false)}>
           {carouselPage === 1 ? (
             <motion.div
@@ -277,7 +272,14 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
               exit="exit"
               variants={pageVariants}
             >
-              {page1Types.map((type, index) => renderServerTypeCard(type, index))}
+              {page1Types.map((type) => (
+                <ServerTypeCard
+                  key={type.id}
+                  type={type}
+                  isSelected={selectedType === type.id}
+                  onSelect={() => handleServerTypeSelect(type.id)}
+                />
+              ))}
             </motion.div>
           ) : (
             <motion.div
@@ -288,13 +290,18 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
               exit="exit"
               variants={pageVariants}
             >
-              {page2Types.map((type, index) => renderServerTypeCard(type, index))}
+              {page2Types.map((type) => (
+                <ServerTypeCard
+                  key={type.id}
+                  type={type}
+                  isSelected={selectedType === type.id}
+                  onSelect={() => handleServerTypeSelect(type.id)}
+                />
+              ))}
             </motion.div>
           )}
         </AnimatePresence>
-        
 
-        {/* Carousel Indicators */}
         <div className="flex justify-center mt-4 gap-2">
           <button
             className={`h-2 w-8 rounded-full transition-colors ${carouselPage === 1 ? "bg-linen" : "bg-cool-gray/30"}`}
@@ -309,7 +316,6 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
         </div>
       </div>
 
-      {/* Hosting mode selection */}
       <motion.div
         className="mt-8 pt-6 border-t border-cool-gray/20"
         initial={{ opacity: 0, y: 20 }}
@@ -384,7 +390,6 @@ export function FlavorSelectionStep({ config, updateConfig}: FlavorSelectionStep
           </Card>
         </div>
       </motion.div>
- 
     </div>
   )
 }

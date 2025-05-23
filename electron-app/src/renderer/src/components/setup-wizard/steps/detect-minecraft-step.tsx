@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Loader2, FolderOpen, AlertCircle, Check } from "lucide-react"
 import { motion } from "framer-motion"
-import type { ServerConfig } from "../setup-wizard"
+import type { ServerConfig } from "@/stores/server-config-store"
 
 interface DetectMinecraftStepProps {
   config: ServerConfig

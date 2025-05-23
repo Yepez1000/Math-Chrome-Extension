@@ -1,4 +1,5 @@
-import { useState } from "react"
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,19 +10,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { motion } from "framer-motion"
 import { FolderOpen, Globe, Sparkles, Layers } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import type { ServerConfig } from "../setup-wizard"
+import { useServerConfigStore } from "@/stores/server-config-store"
+import { useWorldSetupStore } from "@/stores/step-stores"
 import type { WorldValidationResponse, WorldImportParams } from "@shared/types"
 
 interface WorldSetupStepProps {
-  config: ServerConfig
-  updateConfig: (updates: Partial<ServerConfig>) => void
   onComplete: () => void
 }
 
-export function WorldSetupStep({ config, updateConfig, onComplete }: WorldSetupStepProps) {
-  const [selectedTab, setSelectedTab] = useState("create")
-  const [isImporting, setIsImporting] = useState(false)
-  const [worldImported, setWorldImported] = useState(false)
+export function WorldSetupStep({ onComplete }: WorldSetupStepProps) {
+  const { config, updateConfig } = useServerConfigStore()
+  const { selectedTab, setSelectedTab, isImporting, setIsImporting, worldImported, setWorldImported } = useWorldSetupStore()
   const { toast } = useToast()
 
   // Handle world import
