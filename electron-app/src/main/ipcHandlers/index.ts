@@ -1,10 +1,12 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
+import { registerPlayitHandlers } from './playitHandlers';
 
-export function registerAllIpcHandlers() {
+export function registerAllIpcHandlers(mainWindow: BrowserWindow) {
   registerServerDirectoryHandler();
   registerWorldHandlers();
+  registerPlayitHandlers(mainWindow);
 }
 
 ipcMain.handle('show-prompt', async (_, title: string, defaultValue: string) => {

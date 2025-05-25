@@ -8,6 +8,7 @@ import { Loader2, CheckCircle, XCircle, Copy, ExternalLink, AlertTriangle } from
 import { useToast } from "@renderer/hooks/use-toast"
 import { useServerConfigStore } from "@/stores/server-config-store"
 import { useServerStartupStore } from "@/stores/server-startup-store"
+import { IPC_CHANNELS } from "@shared/types"
 
 interface ServerStartupScreenProps {
   onComplete: () => void
@@ -92,8 +93,46 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     addStatusMessage({ message: step.message, status: "pending" })
 
     try {
-      // Call the mock IPC handler
-      const result = await mockIpcCalls(step.handler)
+      let result: any
+
+      // Handle different steps
+      switch (step.handler) {
+        case "startPlayitService":
+          // Start the Playit tunnel
+          result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_TUNNEL, 25565)
+          if (!result.success) {
+            throw new Error(result.message)
+          }
+          break
+
+        case "getPlayitAddress":
+          // Wait for the tunnel address to be received
+          result = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("Timeout waiting for tunnel address"))
+            }, 30000) // 30 second timeout
+
+            const handleAddress = (_event: any, data: { address: string }) => {
+              clearTimeout(timeout)
+              window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ADDRESS)
+              resolve(data.address)
+            }
+
+            const handleError = (_event: any, data: { message: string }) => {
+              clearTimeout(timeout)
+              window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ERROR)
+              reject(new Error(data.message))
+            }
+
+            window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ADDRESS, handleAddress)
+            window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, handleError)
+          })
+          break
+
+        default:
+          // For other steps, use the mock implementation for now
+          result = await mockIpcCalls(step.handler)
+      }
 
       // Update the status message to success
       updateLastStatusMessage("success")

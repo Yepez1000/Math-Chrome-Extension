@@ -4,6 +4,15 @@ import type { LucideIcon } from "lucide-react"
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping"
 
+export type TunnelStatus = "idle" | "starting" | "connected" | "error" | "stopping"
+
+interface TunnelState {
+  status: TunnelStatus
+  address: string | null
+  error: string | null
+  port: number
+}
+
 export type PlayerData = {
   id: string
   name: string
@@ -97,6 +106,9 @@ interface ServerState {
   // Scheduled tasks
   scheduledTasks: ScheduledTask[]
 
+  // Tunnel state
+  tunnel: TunnelState
+
   // Actions
   setServerName: (name: string) => void
   setStatus: (status: ServerStatus) => void
@@ -119,6 +131,12 @@ interface ServerState {
   updateScheduledTask: (id: string, updates: Partial<ScheduledTask>) => void
   deleteScheduledTask: (id: string) => void
   toggleTaskEnabled: (id: string) => void
+
+  // Tunnel actions
+  setTunnelStatus: (status: TunnelStatus) => void
+  setTunnelAddress: (address: string | null) => void
+  setTunnelError: (error: string | null) => void
+  setTunnelPort: (port: number) => void
 }
 
 // Mock initial player data
@@ -390,6 +408,14 @@ export const useServerStore = create<ServerState>()(
         // Scheduled tasks
         scheduledTasks: initialScheduledTasks,
 
+        // Tunnel state
+        tunnel: {
+          status: "idle",
+          address: null,
+          error: null,
+          port: 25565, // Default Minecraft port
+        },
+
         // Actions
         setServerName: (name) => set({ serverName: name }),
 
@@ -610,6 +636,27 @@ export const useServerStore = create<ServerState>()(
             ),
           }))
         },
+
+        // Tunnel actions
+        setTunnelStatus: (status) =>
+          set((state) => ({
+            tunnel: { ...state.tunnel, status },
+          })),
+
+        setTunnelAddress: (address) =>
+          set((state) => ({
+            tunnel: { ...state.tunnel, address },
+          })),
+
+        setTunnelError: (error) =>
+          set((state) => ({
+            tunnel: { ...state.tunnel, error },
+          })),
+
+        setTunnelPort: (port) =>
+          set((state) => ({
+            tunnel: { ...state.tunnel, port },
+          })),
       }),
       {
         name: "server-storage",

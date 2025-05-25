@@ -3,7 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -33,15 +33,17 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return mainWindow
 }
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 import { registerAllIpcHandlers } from './ipcHandlers';
+import { cleanupPlayitProcess } from './ipcHandlers/playitHandlers';
 
 app.whenReady().then(() => {
-  registerAllIpcHandlers();
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -55,7 +57,10 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  createWindow()
+  const mainWindow = createWindow()
+
+  // Register all IPC handlers after the window is created
+  registerAllIpcHandlers(mainWindow);
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -69,6 +74,7 @@ app.whenReady().then(() => {
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    cleanupPlayitProcess();
     app.quit()
   }
 })
