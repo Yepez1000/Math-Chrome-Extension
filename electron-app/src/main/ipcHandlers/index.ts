@@ -1,10 +1,12 @@
 import { ipcMain, dialog } from 'electron'
 import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
+import { registerSystemInfoHandler } from './systemInfo';
 
 export function registerAllIpcHandlers() {
   registerServerDirectoryHandler();
   registerWorldHandlers();
+  registerSystemInfoHandler();
 }
 
 ipcMain.handle('show-prompt', async (_, title: string, defaultValue: string) => {
