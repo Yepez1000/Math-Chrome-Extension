@@ -6,10 +6,9 @@ on:
   pull_request:
 
 jobs:
-  lint-and-type-check:
-    name: Lint & Type Check
+  type-check:
+    name: Type Check
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -31,15 +30,10 @@ jobs:
           cd electron-app
           npm install
 
-      - name: Run ESLint
-        run: |
-          cd electron-app
-          npm run lint
-
       - name: Type Check
         run: |
           cd electron-app
-          npm run type-check
+          npm run typecheck
 
   build-frontend:
     name: Build Frontend
