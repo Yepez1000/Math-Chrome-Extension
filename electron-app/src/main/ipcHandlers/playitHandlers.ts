@@ -137,23 +137,6 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         // console.error('stdout is null'); // Keep this commented out unless needed for debugging
       }
 
-      if (playitProcess.stderr) {
-        playitProcess.stderr.on('data', (data) => {
-          const error = data.toString();
-          // console.error('Playit stderr:', error); // Keep this commented out unless needed for debugging
-          // Optionally send to renderer if needed for error display
-          // mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: error });
-        });
-      } else {
-        // console.error('stderr is null'); // Keep this commented out unless needed for debugging
-      }
-
-      playitProcess.on('error', (error) => {
-        // console.error('Playit process error:', error.message); // Keep this commented out unless needed for debugging
-        // Optionally send to renderer
-        // mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: `Process error: ${error.message}` });
-      });
-
       playitProcess.on('close', (code) => {
         mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { 
           status: 'closed', 
