@@ -24,4 +24,5 @@ export const IPC_CHANNELS = {
   TUNNEL_ERROR: 'tunnel-error',
   TUNNEL_STATUS: 'tunnel-status',
   TUNNEL_OUTPUT: 'tunnel-output',
+  CLAIM_LINK: 'claim-link',
 } as const; 

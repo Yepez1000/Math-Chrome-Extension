@@ -7,6 +7,9 @@ import fs from 'fs/promises'; // Use promises version of fs
 let playitProcess: ChildProcessWithoutNullStreams | null = null;
 let mainWindow: BrowserWindow | null = null;
 
+// Buffer to accumulate stdout data chunks
+let stdoutBuffer = '';
+
 type StartTunnelResponse = { success: boolean; message: string };
 
 // --- Task 3: Platform Support and Binary Handling ---
@@ -91,7 +94,8 @@ async function getPlayitBinaryPath(): Promise<string> {
 export function registerPlayitHandlers(window: BrowserWindow) {
   mainWindow = window;
 
-  ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event, { apiKey, serverPort }: { apiKey: string, serverPort: number }): Promise<StartTunnelResponse> => {
+  ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event): Promise<StartTunnelResponse> => {
+    console.log('START_TUNNEL handler called.'); // Log when handler is called
     // TODO: Implement logic to start the Playit binary
     // TODO: Pass the server port to the Playit binary
     // TODO: Listen for stdout/stderr from the Playit binary
@@ -119,94 +123,96 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 
     // --- Task 1: Run Playit binary via child_process.spawn ---
     // Initial spawn with no arguments to observe basic output.
-    const args: string[] = ['--secret', apiKey, 'tcp', String(serverPort)]; // Add arguments
+    const args: string[] = []; // Run without arguments to get claim link
 
     console.log(`Starting Playit.gg tunnel: "${binaryPath}" ${args.join(' ')}`);
 
     try {
-      playitProcess = spawn(binaryPath, args);
+      console.log('Attempting to spawn Playit process...');
+      // Comment out actual playit process for testing
+      /*
+      playitProcess = spawn(binaryPath, args, {
+        detached: false,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: false,
+        windowsVerbatimArguments: true,
+        env: { ...process.env, FORCE_COLOR: '0' }
+      });
+      */
 
-      // --- Task 2: IPC Messaging (Main ↔ Renderer) - Send Status ---
-      console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'Starting...', message: 'Connecting to Playit.gg...' });
-      // TODO: Send initial starting status
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'Starting...', message: 'Connecting to Playit.gg...' });
+      // Simulate playit output for testing
+      const simulatedOutput = "Visit link to setup https://playit.gg/claim?token=test123";
+      console.log('Simulated Playit output:', simulatedOutput);
+      
+      // Process the simulated output
+      const claimLinkMatch = simulatedOutput.match(/Visit link to setup\s*(https:\/\/playit.gg\/claim\?token=[^\s]+)/);
+      if (claimLinkMatch && claimLinkMatch[1]) {
+        const claimLink = claimLinkMatch[1];
+        console.log('Found claim link:', claimLink);
+        mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { url: claimLink });
+      }
+
+      return { success: true, message: 'Playit process simulated.' };
+
+      /* Comment out the rest of the process handling
+      console.log('Playit process spawned successfully. Process ID:', playitProcess.pid);
+
+      // Add error handler for spawn
+      playitProcess.on('error', (err) => {
+        console.error('Error in Playit process:', err);
+        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { 
+          message: `Process error: ${err.message}` 
+        });
+      });
 
       // --- Basic Playit stdout logging ---
+      let buffer = '';
       playitProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        console.log(`Playit stdout: ${output}`);
-        // TODO: Parse output for tunnel address/status and send updates via IPC
-        // Example parsing (adjust based on actual Playit output format):
-        const addressMatch = output.match(/tcp:\/\/([^\s]+)/);
-        if (addressMatch && addressMatch[1]) {
-          const address = addressMatch[1];
-          console.log('Detected tunnel address:', address);
-          mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ADDRESS, { address });
-           mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'connected', message: `Tunnel established: ${address}` });
-        }
+        const chunk = data.toString();
+        buffer += chunk;
+        
+        // Process the buffer for complete lines
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || ''; // Keep the last potentially incomplete line
 
-         // Look for status updates
-         if (output.includes('Connecting to playit.gg...')) {
-             mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'starting', message: 'Connecting to Playit.gg...' });
-         } else if (output.includes('Tunnel established')) {
-             // Status will be sent by the address match above
-         } else if (output.includes('Disconnected')) {
-             mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'disconnected', message: 'Tunnel disconnected.' });
-         } else if (output.includes('Error')) {
-             // Errors are handled in stderr, but could add checks here too if needed
-         }
+        for (const line of lines) {
+          console.log('Playit output:', line);
+          
+          // Look for the claim link in each line
+          const claimLinkMatch = line.match(/Visit link to setup\s*(https:\/\/playit.gg\/claim\?token=[^\s]+)/);
+          if (claimLinkMatch && claimLinkMatch[1]) {
+            const claimLink = claimLinkMatch[1];
+            console.log('Found claim link:', claimLink);
+            mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { url: claimLink });
+            // Don't kill the process - let it continue running
+          }
+        }
       });
 
-      // --- Log errors and unexpected exits ---
-      // --- IPC Messaging (Main ↔ Renderer) - Send Error and Status ---
+      // Handle stderr
       playitProcess.stderr.on('data', (data) => {
         const errorOutput = data.toString();
-        console.error(`Playit stderr: ${errorOutput}`);
-        // TODO: Send error details and status update via IPC
-        console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_ERROR, { message: errorOutput });
+        console.error('Playit error:', errorOutput);
         mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorOutput });
-         console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'Error', message: errorOutput.trim() });
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'Error', message: errorOutput.trim() });
-      });
-
-      playitProcess.on('error', (err) => {
-        console.error('Playit process failed to start.', err);
-         // TODO: Send startup failure error and status update via IPC
-        console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_ERROR, { message: `Failed to start Playit process: ${err.message}` });
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: `Failed to start Playit process: ${err.message}` });
-         console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'Error', message: `Failed to start: ${err.message}` });
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'Error', message: `Failed to start: ${err.message}` });
-        playitProcess = null; // Reset process state
       });
 
       playitProcess.on('close', (code) => {
         console.log(`Playit process exited with code ${code}`);
-        let statusMessage = `Playit process exited with code ${code}.`;
-        if (code !== 0) {
-             statusMessage += ' Check logs for errors.';
-        }
-         // TODO: Send disconnected status update via IPC
-        console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'disconnected', code, message: statusMessage });
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'disconnected', code, message: statusMessage });
-        playitProcess = null; // Reset process state
+        playitProcess = null;
       });
+      */
 
-      return { success: true, message: 'Playit process spawn initiated.' };
-
-    } catch (error: any) { // Catch block for spawn error
+    } catch (error: any) {
       console.error('Failed to spawn Playit process:', error);
       // TODO: Send spawn failure error and status update via IPC
       console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_ERROR, { message: `Failed to spawn Playit process: ${error.message}` });
       mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: `Failed to spawn Playit process: ${error.message}` });
-       console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: `Spawn failed: ${error.message}` });
+      console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: `Spawn failed: ${error.message}` });
       mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: `Spawn failed: ${error.message}` });
       playitProcess = null; // Reset process state
-       return { success: false, message: `Failed to spawn Playit process: ${error.message}` };
+      return { success: false, message: `Failed to spawn Playit process: ${error.message}` };
     }
-    // Fallback return to satisfy linter - should theoretically not be reached
-    // TODO: Review fallback return logic
-    // Removed: Unreachable fallback return after adding comprehensive error handling
-    // return { success: false, message: 'Internal handler error - unexpected code path.' };
   });
 }
 

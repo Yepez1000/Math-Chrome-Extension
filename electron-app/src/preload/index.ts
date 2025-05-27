@@ -27,6 +27,7 @@ if (process.contextIsolated) {
             IPC_CHANNELS.PICK_DIRECTORY,
             IPC_CHANNELS.IMPORT_WORLD,
             IPC_CHANNELS.START_TUNNEL,
+            IPC_CHANNELS.STOP_TUNNEL,
           ] as const;
           if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
             return ipcRenderer.invoke(channel, ...args);
@@ -39,6 +40,7 @@ if (process.contextIsolated) {
             IPC_CHANNELS.TUNNEL_ADDRESS,
             IPC_CHANNELS.TUNNEL_ERROR,
             IPC_CHANNELS.TUNNEL_STATUS,
+            IPC_CHANNELS.CLAIM_LINK,
           ] as const;
           if ((validOnChannels as ReadonlyArray<string>).includes(channel)) {
             // Pass the data object received from the main process
@@ -50,6 +52,7 @@ if (process.contextIsolated) {
             IPC_CHANNELS.TUNNEL_ADDRESS,
             IPC_CHANNELS.TUNNEL_ERROR,
             IPC_CHANNELS.TUNNEL_STATUS,
+            IPC_CHANNELS.CLAIM_LINK,
           ] as const;
           if ((validRemoveListenerChannels as ReadonlyArray<string>).includes(channel)) {
             ipcRenderer.removeListener(channel, func);
@@ -60,6 +63,7 @@ if (process.contextIsolated) {
             IPC_CHANNELS.TUNNEL_ADDRESS,
             IPC_CHANNELS.TUNNEL_ERROR,
             IPC_CHANNELS.TUNNEL_STATUS,
+            IPC_CHANNELS.CLAIM_LINK,
           ] as const;
           if ((validRemoveAllListenersChannels as ReadonlyArray<string>).includes(channel)) {
             ipcRenderer.removeAllListeners(channel);

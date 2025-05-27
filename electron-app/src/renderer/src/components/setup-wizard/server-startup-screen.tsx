@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { motion, AnimatePresence } from "framer-motion"
@@ -33,6 +33,8 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   } = useServerStartupStore()
 
   const { setTunnelStatus, setTunnelAddress, setTunnelError } = useServerStore(); // Access tunnel actions from server store
+
+  const [claimLink, setClaimLink] = useState<string | null>(null); // State for storing the claim link
 
   // Define the startup steps
   const startupSteps = [
@@ -154,6 +156,16 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
        setTunnelError(data.message);
        addStatusMessage({ message: `Tunnel Error: ${data.message}`, status: 'error' });
        setIsError(true);
+       setIsComplete(false); // Ensure isComplete is false on tunnel error
+    });
+
+    // Add listener for claim link
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.CLAIM_LINK, (data) => {
+       console.log('Claim Link Received:', data);
+       // setClaimLink(data.url); // Store the claim link - commented out
+       console.log(`Captured Claim Link: ${data.url}`); // Log the captured link
+       addStatusMessage({ message: `Claim link received. Please authorize the agent.`, status: 'pending' }); // Add a status message
+       // We don't set tunnel status here, as it's still in a 'claiming' phase
     });
 
     // Cleanup listeners
@@ -161,6 +173,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_STATUS);
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ADDRESS);
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ERROR);
+      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.CLAIM_LINK); // Cleanup claim link listener
     }
   }, [])
 
@@ -215,6 +228,13 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
               </div>
             </CardContent>
           </Card>
+
+          {/* Comment out the claim link display temporarily */}
+          
+
+           {/* Display tunnel address when connected */}
+           
+
         </div>
       </CardContent>
     </Card>
