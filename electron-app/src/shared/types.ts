@@ -20,3 +20,9 @@ export const IPC_CHANNELS = {
   IMPORT_WORLD: 'import-world',
   SELECT_SERVER_DIRECTORY: 'select-server-directory'
 } as const; 
+
+export interface SystemInfo {
+  totalRam: number;
+  availableRam: number;
+  cpuCores: number;
+} 
