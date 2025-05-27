@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import React, { useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -17,14 +17,32 @@ interface PerformanceSettingsStepProps {
 
 export function PerformanceSettingsStep({ onComplete }: PerformanceSettingsStepProps) {
   const { config, updateConfig } = useServerConfigStore()
-  const { systemInfo, setSystemInfo } = usePerformanceSettingsStore()
+  const { systemInfo } = usePerformanceSettingsStore()
+
+  // Log systemInfo whenever it changes
+  useEffect(() => {
+    console.log('Current systemInfo in PerformanceSettingsStep:', systemInfo);
+  }, [systemInfo]);
+
+  // Calculate recommended RAM based on server type and hosting mode
+  const getRecommendedRam = () => {
+    if (config.isModded) {
+      return config.hostingMode === "play+host" ? "6144-8192" : "4096-6144" // 6-8GB or 4-6GB
+    } else {
+      return config.hostingMode === "play+host" ? "3072-4096" : "2048-3072" // 4GB or 2-3GB
+    }
+  }
 
   // Helper to get the middle value of the recommended RAM range
   const getRecommendedRamMiddle = () => {
     const rec = getRecommendedRam()
-    if (rec.includes('-')) {
-      const [min, max] = rec.split('-').map(Number)
-      return Math.round((min + max) / 2)
+    console.log('Recommended RAM range:', rec)
+    const parts = rec.split('-')
+    if (parts.length === 2) {
+      const [min, max] = parts.map(Number)
+      const middle = Math.round((min + max) / 2)
+      console.log('Calculated middle RAM value:', middle)
+      return middle
     }
     return Number(rec)
   }
@@ -32,22 +50,15 @@ export function PerformanceSettingsStep({ onComplete }: PerformanceSettingsStepP
   // Set default RAM to the recommended middle if not set
   useEffect(() => {
     if (!config.ram || config.ram < 512) {
-      updateConfig({ ram: getRecommendedRamMiddle() })
+      const recommendedRam = getRecommendedRamMiddle()
+      console.log('Setting default RAM to:', recommendedRam)
+      updateConfig({ ram: recommendedRam })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    // In a real app, this would use IPC to get system information
-    // const getSystemInfo = async () => {
-    //   const info = await window.electronAPI.getSystemInfo()
-    //   setSystemInfo(info)
-    // }
-    // getSystemInfo()
-    // For demo purposes, we'll use the mock data already set
-  }, [])
-
   const handleRamChange = (value: number[]) => {
+    console.log('RAM slider changed to:', value[0])
     updateConfig({ ram: value[0] })
   }
 
@@ -72,18 +83,7 @@ export function PerformanceSettingsStep({ onComplete }: PerformanceSettingsStepP
     }
   }
 
-  // Calculate recommended RAM based on server type and hosting mode
-  // Returns recommended RAM range in MB as a string
-  const getRecommendedRam = () => {
-    if (config.isModded) {
-      return config.hostingMode === "play+host" ? "6144-8192" : "4096-6144" // 6-8GB or 4-6GB
-    } else {
-      return config.hostingMode === "play+host" ? "3072-4096" : "2048-3072" // 4GB or 2-3GB
-    }
-  }
-
   // Add a function to check if RAM is within recommended range
-  // Checks if RAM is within recommended MB range
   const isRamInRecommendedRange = () => {
     if (config.isModded) {
       if (config.hostingMode === "play+host") {

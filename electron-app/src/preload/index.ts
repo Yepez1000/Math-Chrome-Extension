@@ -1,50 +1,33 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
-import { DirectorySelectionResponse, WorldImportParams, WorldValidationResponse, IPC_CHANNELS } from '../shared/types'
+import { contextBridge, ipcRenderer } from 'electron'
+import { WorldImportParams } from '../shared/types'
 
 // Custom APIs for renderer
-const { ipcRenderer } = require('electron');
-
-// Define the API interface for better type safety
-interface ElectronAPI {
-  pickDirectory: () => Promise<DirectorySelectionResponse>;
-  importWorld: (params: WorldImportParams) => Promise<WorldValidationResponse>;
-}
+const api = {
+  getTempDir: () => ipcRenderer.invoke('get-temp-dir') as Promise<string>,
+  writeTempFile: (path: string, data: string) => ipcRenderer.invoke('write-temp-file', path, data) as Promise<void>,
+  pickDirectory: () => ipcRenderer.invoke('pick-directory') as Promise<string | null>,
+  importWorld: (params: WorldImportParams) => ipcRenderer.invoke('import-world', params),
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  test: () => 'test'
+} as const
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('electronAPI', {
-      // Open a native directory picker dialog
-      pickDirectory: async (): Promise<DirectorySelectionResponse> => {
-        return await ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY);
-      },
-      // Import a Minecraft world from a directory
-      importWorld: async (params: WorldImportParams): Promise<WorldValidationResponse> => 
-        await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, params),
-    } as ElectronAPI)
+    contextBridge.exposeInMainWorld('electronAPI', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.electronAPI = {
-    pickDirectory: async (): Promise<DirectorySelectionResponse> => {
-      return await ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY);
-    },
-    importWorld: async (params: WorldImportParams): Promise<WorldValidationResponse> => 
-      await ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, params),
-  } as ElectronAPI
+  window.electronAPI = api
 }
 
 // Type declaration for TypeScript
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
+    electronAPI: typeof api;
   }
 }
