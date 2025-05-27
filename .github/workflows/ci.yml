@@ -6,8 +6,43 @@ on:
   pull_request:
 
 jobs:
-  frontend-build:
-    name: Front-end Build
+  lint-and-type-check:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-lint-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-lint-
+
+      - name: Install Dependencies
+        run: |
+          cd electron-app
+          npm install
+
+      - name: Run ESLint
+        run: |
+          cd electron-app
+          npm run lint
+
+      - name: Type Check
+        run: |
+          cd electron-app
+          npm run type-check
+
+  build-frontend:
+    name: Build Frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +51,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-frontend-${{ hashFiles('electron-app/src/renderer/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-frontend-
 
       - name: Install Dependencies
         run: npm install
@@ -25,8 +68,14 @@ jobs:
         run: npm run build
         working-directory: ./electron-app/src/renderer/
 
-  backend-build:
-    name: Back-end Build
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-frontend
+          path: electron-app/out/renderer/
+
+  build-backend:
+    name: Build Backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +85,14 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-backend-${{ hashFiles('electron-app/src/main/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-backend-
+
       - name: Install Dependencies
         run: npm install
         working-directory: ./electron-app/src/main/
@@ -44,12 +101,46 @@ jobs:
         run: npm run build
         working-directory: ./electron-app/src/main/
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-backend
+          path: electron-app/out/main/
+
   package-app:
     name: Package App
-    runs-on: windows-latest
-    needs: [frontend-build, backend-build]
+    runs-on: ${{ matrix.os }}
+    needs: [build-frontend, build-backend]
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-package-${{ hashFiles('electron-app/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-package-
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v3
+        with:
+          name: build-frontend
+          path: electron-app/out/renderer/
+
+      - name: Download backend build
+        uses: actions/download-artifact@v3
+        with:
+          name: build-backend
+          path: electron-app/out/main/
 
       - name: Install Dependencies
         run: npm install
@@ -60,3 +151,9 @@ jobs:
           npm run build
           npm run package
         working-directory: ./electron-app
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: electron-app-${{ matrix.os }}
+          path: electron-app/release/
