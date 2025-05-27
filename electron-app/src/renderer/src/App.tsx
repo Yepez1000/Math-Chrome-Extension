@@ -6,52 +6,59 @@ import ServerStartupPage from "@/app/server-startup/page";
 import { Toaster } from "@/components/ui/toaster";
 import { usePerformanceSettingsStore } from "@/stores/step-stores";
 
+// Helper for dev-only logging
+const devLog = (...args: any[]) => {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+};
+
+const devError = (...args: any[]) => {
+  if (import.meta.env.DEV) {
+    console.error(...args);
+  }
+};
+
 function App(): React.JSX.Element {
   const { setSystemInfo } = usePerformanceSettingsStore();
 
-  // Initialize app with IPC test and system info
+  // Initialize app with system info - runs once on mount
   useEffect(() => {
-    console.log('App useEffect triggered. Dependencies:', { setSystemInfo });
-    
-    const initApp = async () => {
-      console.log('=== App Initialization Start ===');
+    const initializeSystemInfo = async () => {
+      devLog('=== App Initialization Start ===');
       
       // Test basic IPC communication first
       try {
-        console.log('Testing IPC communication...');
+        devLog('Testing IPC communication...');
         const testResult = window.electronAPI.test();
-        console.log('IPC test successful:', testResult);
+        devLog('IPC test successful:', testResult);
       } catch (error) {
-        console.error('IPC test failed:', error);
-        return; // Don't proceed if IPC test fails
+        devError('IPC test failed:', error);
+        return; // Early return - don't proceed if IPC test fails
       }
 
       // Get system info only if IPC test succeeds
+      if (!window.electronAPI?.getSystemInfo) {
+        devError('getSystemInfo is not available on window.electronAPI!');
+        devLog('Available APIs:', Object.keys(window.electronAPI || {}));
+        return;
+      }
+
       try {
-        if (!window.electronAPI?.getSystemInfo) {
-          console.error('getSystemInfo is not available on window.electronAPI!');
-          console.log('Available APIs:', Object.keys(window.electronAPI || {}));
-          return;
-        }
-        console.log('Calling getSystemInfo...');
-        const info = await window.electronAPI.getSystemInfo();
-        console.log('System info received:', info);
-        setSystemInfo(info);
-        console.log('System info set in store');
+        devLog('Calling getSystemInfo...');
+        const systemInfo = await window.electronAPI.getSystemInfo();
+        devLog('System info received:', systemInfo);
+        setSystemInfo(systemInfo);
+        devLog('System info set in store');
       } catch (error) {
-        console.error('Error getting system info:', error);
+        devError('Error getting system info:', error);
       }
       
-      console.log('=== App Initialization Complete ===');
+      devLog('=== App Initialization Complete ===');
     };
 
-    initApp();
-    
-    // Cleanup function
-    return () => {
-      console.log('App useEffect cleanup running');
-    };
-  }, [setSystemInfo]);
+    initializeSystemInfo();
+  }, []); // Empty dependency array - setSystemInfo is stable from Zustand
 
   return (
     <>
