@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import { DirectorySelectionResponse, WorldImportParams, WorldValidationResponse, IPC_CHANNELS } from '../shared/types'
 
 // Define the API interface for better type safety
@@ -28,7 +27,6 @@ if (process.contextIsolated) {
             IPC_CHANNELS.PICK_DIRECTORY,
             IPC_CHANNELS.IMPORT_WORLD,
             IPC_CHANNELS.START_TUNNEL,
-            'stop-tunnel',
           ] as const;
           if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
             return ipcRenderer.invoke(channel, ...args);
@@ -38,48 +36,53 @@ if (process.contextIsolated) {
         on: (channel: string, func: (...args: any[]) => void) => {
           // Whitelist on channels
           const validOnChannels = [
-            IPC_CHANNELS.TUNNEL_STATUS,
             IPC_CHANNELS.TUNNEL_ADDRESS,
             IPC_CHANNELS.TUNNEL_ERROR,
+            IPC_CHANNELS.TUNNEL_STATUS,
           ] as const;
           if ((validOnChannels as ReadonlyArray<string>).includes(channel)) {
-            // Deliberately strip event as it includes `sender`
-            ipcRenderer.on(channel, (_event, ...args) => func(...args));
+            // Pass the data object received from the main process
+            ipcRenderer.on(channel, (_event, data) => func(data));
           }
         },
         removeListener: (channel: string, func: (...args: any[]) => void) => {
           const validRemoveListenerChannels = [
-            IPC_CHANNELS.TUNNEL_STATUS,
             IPC_CHANNELS.TUNNEL_ADDRESS,
             IPC_CHANNELS.TUNNEL_ERROR,
+            IPC_CHANNELS.TUNNEL_STATUS,
           ] as const;
           if ((validRemoveListenerChannels as ReadonlyArray<string>).includes(channel)) {
             ipcRenderer.removeListener(channel, func);
           }
         },
-        // Add removeAllListeners for convenience and to match renderer usage
         removeAllListeners: (channel: string) => {
-           const validRemoveAllListenersChannels = [
-            IPC_CHANNELS.TUNNEL_STATUS,
+          const validRemoveAllListenersChannels = [
             IPC_CHANNELS.TUNNEL_ADDRESS,
             IPC_CHANNELS.TUNNEL_ERROR,
+            IPC_CHANNELS.TUNNEL_STATUS,
           ] as const;
           if ((validRemoveAllListenersChannels as ReadonlyArray<string>).includes(channel)) {
-             ipcRenderer.removeAllListeners(channel);
+            ipcRenderer.removeAllListeners(channel);
           }
-        }
+        },
       },
-      // Expose directory and world import functions
+      // Expose other specific Electron APIs
       pickDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY),
       importWorld: (params: WorldImportParams) => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_WORLD, params),
-      // ... any other APIs you want to expose
-    } as ElectronAPI);
+    });
   } catch (error) {
     console.error(error);
   }
 } else {
   // @ts-ignore (define in dts)
-  window.electron = electronAPI;
+  window.electronAPI = {
+    ipcRenderer: {
+      invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+      on: (channel: string, func: (...args: any[]) => void) => ipcRenderer.on(channel, (_event, data) => func(data)),
+      removeListener: (channel: string, func: (...args: any[]) => void) => ipcRenderer.removeListener(channel, func),
+      removeAllListeners: (channel: string) => ipcRenderer.removeAllListeners(channel),
+    },
+  };
 }
 
 // Type declaration for TypeScript

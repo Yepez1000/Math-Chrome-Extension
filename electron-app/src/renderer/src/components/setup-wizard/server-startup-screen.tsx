@@ -9,6 +9,7 @@ import { useToast } from "@renderer/hooks/use-toast"
 import { useServerConfigStore } from "@/stores/server-config-store"
 import { useServerStartupStore } from "@/stores/server-startup-store"
 import { IPC_CHANNELS } from "@shared/types"
+import { useServerStore } from "@/lib/store"
 
 interface ServerStartupScreenProps {
   onComplete: () => void
@@ -23,15 +24,15 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     currentStep,
     isComplete,
     isError,
-    dnsAddress,
     addStatusMessage,
     updateLastStatusMessage,
     setCurrentStep,
     setIsComplete,
     setIsError,
-    setDnsAddress,
     reset,
   } = useServerStartupStore()
+
+  const { setTunnelStatus, setTunnelAddress, setTunnelError } = useServerStore(); // Access tunnel actions from server store
 
   // Define the startup steps
   const startupSteps = [
@@ -51,14 +52,9 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       error: "Failed to start the Minecraft server. Please check your server configuration."
     },
     {
-      message: "Initializing Playit.gg tunnel service...",
-      handler: "startPlayitService",
-      error: "Failed to start Playit.gg tunnel service. Please check your internet connection and try again."
-    },
-    {
-      message: "Retrieving your server address...",
-      handler: "getPlayitAddress",
-      error: "Failed to retrieve your server address. Please try again."
+      message: "Setting up Playit.gg tunnel...",
+      handler: "startTunnel",
+      error: "Failed to set up the Playit.gg tunnel. Please check your API key and network connection."
     }
   ]
 
@@ -72,10 +68,6 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
     if (shouldFail) {
       throw new Error()
-    }
-
-    if (handler === "getPlayitAddress") {
-      return "mc-server-12345.playit.gg:25565"
     }
 
     return true
@@ -97,50 +89,23 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
       // Handle different steps
       switch (step.handler) {
-        case "startPlayitService":
-          // Start the Playit tunnel
-          result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_TUNNEL, 25565)
-          if (!result.success) {
-            throw new Error(result.message)
-          }
-          break
-
-        case "getPlayitAddress":
-          // Wait for the tunnel address to be received
-          result = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error("Timeout waiting for tunnel address"))
-            }, 30000) // 30 second timeout
-
-            const handleAddress = (_event: any, data: { address: string }) => {
-              clearTimeout(timeout)
-              window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ADDRESS)
-              resolve(data.address)
-            }
-
-            const handleError = (_event: any, data: { message: string }) => {
-              clearTimeout(timeout)
-              window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ERROR)
-              reject(new Error(data.message))
-            }
-
-            window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ADDRESS, handleAddress)
-            window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, handleError)
-          })
-          break
-
+        case "startTunnel":
+           // TODO: Get actual API key from user input or config
+           const apiKey = "YOUR_PLAYIT_API_KEY_HERE"; // Placeholder
+           // TODO: Get actual server port from server config
+           const serverPort = 25565; // Hardcoded for now
+           result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_TUNNEL, { apiKey, serverPort });
+           if (!result.success) {
+             throw new Error(result.message);
+           }
+           break;
         default:
-          // For other steps, use the mock implementation for now
+          // For all other steps, use the mock implementation for now
           result = await mockIpcCalls(step.handler)
       }
 
       // Update the status message to success
       updateLastStatusMessage("success")
-
-      // If this is the last step, save the DNS address
-      if (stepIndex === startupSteps.length - 1 && typeof result === "string") {
-        setDnsAddress(result)
-      }
 
       // Move to the next step
       setCurrentStep(stepIndex + 1)
@@ -166,18 +131,38 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       executeStep(0)
       hasRun.current = true
     }
-  }, [])
 
-  // Handle copy to clipboard
-  const copyToClipboard = () => {
-    if (dnsAddress) {
-      navigator.clipboard.writeText(dnsAddress)
-      toast({
-        title: "Copied to clipboard",
-        description: "Server address has been copied to your clipboard",
-      })
+    // Add listeners for tunnel status updates
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_STATUS, (data) => {
+       console.log('Tunnel Status Update:', data);
+       // Use the store action to set tunnel status
+       setTunnelStatus(data.status === 'Error' || data.status === 'Disconnected' ? 'error' : data.status);
+       addStatusMessage({ message: `Tunnel Status: ${data.message}`, status: data.status === 'Error' || data.status === 'Disconnected' ? 'error' : 'success' });
+    });
+
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ADDRESS, (data) => {
+       console.log('Tunnel Address:', data);
+       // Use the store action to set tunnel address
+       setTunnelAddress(data.address);
+       addStatusMessage({ message: `Tunnel Address: ${data.address}`, status: 'success' });
+       // TODO: Store the address in the store
+    });
+
+     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, (data) => {
+       console.error('Tunnel Error:', data);
+       // Use the store action to set tunnel error
+       setTunnelError(data.message);
+       addStatusMessage({ message: `Tunnel Error: ${data.message}`, status: 'error' });
+       setIsError(true);
+    });
+
+    // Cleanup listeners
+    return () => {
+      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_STATUS);
+      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ADDRESS);
+      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ERROR);
     }
-  }
+  }, [])
 
   // Handle retry
   const handleRetry = () => {
@@ -206,108 +191,25 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
           <Card className="border-cool-gray/30 bg-night">
             <CardContent className="p-6">
               <div className="space-y-4">
-                <h3 className="text-lg font-medium text-linen mb-4">Status Updates</h3>
+                {statusMessages.map((msg, index) => (
+                  <div key={index} className="flex items-start gap-3">
+                    {msg.status === "pending" && <Loader2 className="h-5 w-5 text-cool-gray animate-spin" />}
+                    {msg.status === "success" && <CheckCircle className="h-5 w-5 text-green-500" />}
+                    {msg.status === "error" && <XCircle className="h-5 w-5 text-red-500" />}
+                    <span className={`text-sm ${msg.status === "error" ? "text-red-400" : "text-linen"}`}>
+                      {msg.message}
+                    </span>
+                  </div>
+                ))}
 
-                <div className="space-y-3">
-                  <AnimatePresence>
-                    {statusMessages.map((status, index) => (
-                      <motion.div
-                        key={`${index}-${status.message}`}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="flex items-start gap-3"
-                      >
-                        {status.status === "pending" && (
-                          <Loader2 className="h-5 w-5 text-cool-gray animate-spin mt-0.5" />
-                        )}
-                        {status.status === "success" && <CheckCircle className="h-5 w-5 text-linen mt-0.5" />}
-                        {status.status === "error" && <XCircle className="h-5 w-5 text-red-400 mt-0.5" />}
-                        <span
-                          className={`${
-                            status.status === "error"
-                              ? "text-red-400"
-                              : status.status === "success"
-                                ? "text-linen"
-                                : "text-cool-gray"
-                          }`}
-                        >
-                          {status.message}
-                        </span>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-
-                  {!isComplete && !isError && currentStep < startupSteps.length && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: [0.5, 1, 0.5] }}
-                      transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                      className="text-cool-gray text-sm italic mt-2"
-                    >
-                      Processing...
-                    </motion.div>
-                  )}
-                </div>
-
-                {isComplete && dnsAddress && (
+                {!isComplete && !isError && currentStep < startupSteps.length && (
                   <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    transition={{ duration: 0.5, delay: 0.5 }}
-                    className="mt-6 pt-4 border-t border-cool-gray/20"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+                    className="text-cool-gray text-sm italic mt-2"
                   >
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="text-linen font-medium mb-2">Your Server Address</h4>
-                        <div className="flex items-center gap-2">
-                          <div className="bg-space-cadet p-2 rounded flex-1 text-linen font-mono">{dnsAddress}</div>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={copyToClipboard}
-                            className="border-linen/30 text-linen hover:bg-linen/10"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <p className="text-sm text-cool-gray mt-2">
-                          Share this address with friends so they can connect to your server
-                        </p>
-                      </div>
-
-                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
-                        <Button onClick={onComplete} className="w-full bg-linen text-night hover:bg-linen/90">
-                          <ExternalLink className="mr-2 h-4 w-4" />
-                          Continue to Dashboard
-                        </Button>
-                      </motion.div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {isError && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    transition={{ duration: 0.5 }}
-                    className="mt-6 pt-4 border-t border-cool-gray/20"
-                  >
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2 text-red-400">
-                        <AlertTriangle className="h-5 w-5" />
-                        <span>Server launch failed</span>
-                      </div>
-                      <p className="text-cool-gray">
-                        We encountered an issue while setting up your server. You can try again or contact support if the
-                        problem persists.
-                      </p>
-                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
-                        <Button onClick={handleRetry} className="w-full bg-linen text-night hover:bg-linen/90">
-                          Try Again
-                        </Button>
-                      </motion.div>
-                    </div>
+                    Processing...
                   </motion.div>
                 )}
               </div>

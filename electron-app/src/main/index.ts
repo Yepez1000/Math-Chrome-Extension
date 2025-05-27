@@ -57,6 +57,18 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
+  // Handler to open external URLs
+  ipcMain.handle('open-external-url', async (_event, url) => {
+    console.log('Opening external URL:', url);
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error: any) {
+      console.error('Failed to open external URL:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
   const mainWindow = createWindow()
 
   // Register all IPC handlers after the window is created
@@ -69,15 +81,13 @@ app.whenReady().then(() => {
   })
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
+// Handle app quit
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     cleanupPlayitProcess();
-    app.quit()
+    app.quit();
   }
-})
+});
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
