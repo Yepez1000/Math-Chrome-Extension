@@ -19,16 +19,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ runner.os }}-node-lint-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-lint-
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
 
       - name: Install Dependencies
         run: npm ci
@@ -41,8 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./electron-app/src/renderer
-
+        working-directory: ./electron-app
     steps:
       - uses: actions/checkout@v4
 
@@ -50,16 +41,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ runner.os }}-node-frontend-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-frontend-
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
 
       - name: Install Dependencies
         run: npm ci
@@ -71,15 +54,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-frontend
-          path: ../../../electron-app/out/renderer/
+          path: electron-app/out/renderer/
 
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./electron-app/src/main
-
+        working-directory: ./electron-app
     steps:
       - uses: actions/checkout@v4
 
@@ -87,16 +69,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ runner.os }}-node-backend-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-backend-
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
 
       - name: Install Dependencies
         run: npm ci
@@ -108,19 +82,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-backend
-          path: ../../../electron-app/out/main/
+          path: electron-app/out/main/
 
   package-app:
     name: Package App
     runs-on: ${{ matrix.os }}
     needs: [build-frontend, build-backend]
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest]
     defaults:
       run:
         working-directory: ./electron-app
-
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -128,16 +101,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ runner.os }}-node-package-${{ hashFiles('electron-app/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-package-
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
 
       - name: Download Frontend Build
         uses: actions/download-artifact@v4
