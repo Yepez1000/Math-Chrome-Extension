@@ -1,14 +1,12 @@
 import { ipcMain, BrowserWindow, app } from 'electron'; // Import 'app'
-import { spawn, ChildProcessWithoutNullStreams, exec } from 'child_process'; // Import 'exec'
+import { spawn, ChildProcess, exec } from 'child_process';
 import { IPC_CHANNELS } from '../../shared/types';
 import { join } from 'path';
 import fs from 'fs/promises'; // Use promises version of fs
 
-let playitProcess: ChildProcessWithoutNullStreams | null = null;
+let playitProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
-
-// Buffer to accumulate stdout data chunks
-let stdoutBuffer = '';
+let claimLinkFound = false; // Flag to ensure link status is sent only once
 
 type StartTunnelResponse = { success: boolean; message: string };
 
@@ -16,77 +14,54 @@ type StartTunnelResponse = { success: boolean; message: string };
 async function getPlayitBinaryPath(): Promise<string> {
   const platform = process.platform;
   let binaryName = '';
-  let binaryDir = ''; // Directory where binaries are stored
+  let binaryDir = '';
 
-  // Determine binary name and directory based on OS
   if (platform === 'win32') {
     binaryName = 'playit-windows-x64.exe';
-    // Assuming binaries are in a 'bin/playit' folder relative to app root
-    // In production, app.getAppPath() points to the app bundle root.
-    // In development, it points to your project root.
     binaryDir = join(app.getAppPath(), 'bin', 'playit', 'win');
-  } else if (platform === 'darwin') { // macOS
+  } else if (platform === 'darwin') {
     binaryName = 'playit-macos-x64';
-     // Assuming binaries are in 'bin/playit'
     binaryDir = join(app.getAppPath(), 'bin', 'playit', 'mac');
   } else if (platform === 'linux') {
     binaryName = 'playit-linux-x64';
-     // Assuming binaries are in 'resources/playit_binaries'
-     binaryDir = join(app.getAppPath(), 'resources', 'playit_binaries', 'linux');
+    binaryDir = join(app.getAppPath(), 'resources', 'playit_binaries', 'linux');
   } else {
     throw new Error(`Unsupported platform: ${platform}`);
   }
 
   const binaryPath = join(binaryDir, binaryName);
 
-  // --- Task 3: Ensure Playit is bundled or downloaded per platform ---
-  // For this implementation, we assume the binaries are *bundled*
-  // in the resources/playit_binaries/[os] directory.
-  // TODO: If you need auto-downloading, that logic would go here.
-
-  // --- Task 3: Set execute permissions for macOS/Linux (chmod +x) ---
   if (platform !== 'win32') {
     try {
-      // Check if binary exists before trying to chmod
-       await fs.access(binaryPath, fs.constants.F_OK); // Check if file exists
-      console.log(`Setting execute permissions for ${binaryPath}`);
-      // Use 'exec' for chmod as it's a simple command
+      await fs.access(binaryPath, fs.constants.F_OK);
       await new Promise<void>((resolve, reject) => {
         exec(`chmod +x "${binaryPath}"`, (error) => {
           if (error) {
-            console.error(`chmod +x failed for ${binaryPath}:`, error);
-             // Decide if this is a fatal error or just a warning
-             // For now, we'll reject to stop the process
             reject(new Error(`Failed to set execute permissions for binary: ${error.message}`));
           } else {
-            console.log(`Execute permissions set for ${binaryPath}`);
             resolve();
           }
         });
       });
     } catch (err: any) {
-        // If fs.access failed, the binary wasn't found
-        if (err.code === 'ENOENT') {
-             throw new Error(`Playit binary not found at expected path: ${binaryPath}`);
-        } else {
-            // Other file system errors
-             throw new Error(`Error accessing Playit binary at ${binaryPath}: ${err.message}`);
-        }
+      if (err.code === 'ENOENT') {
+        throw new Error(`Playit binary not found at expected path: ${binaryPath}`);
+      } else {
+        throw new Error(`Error accessing Playit binary at ${binaryPath}: ${err.message}`);
+      }
     }
   } else {
-      // On Windows, just check if the file exists
-       try {
-           await fs.access(binaryPath, fs.constants.F_OK);
-       } catch (err: any) {
-            if (err.code === 'ENOENT') {
-                 throw new Error(`Playit binary not found at expected path: ${binaryPath}`);
-            } else {
-                 throw new Error(`Error accessing Playit binary at ${binaryPath}: ${err.message}`);
-            }
-       }
+    try {
+      await fs.access(binaryPath, fs.constants.F_OK);
+    } catch (err: any) {
+      if (err.code === 'ENOENT') {
+        throw new Error(`Playit binary not found at expected path: ${binaryPath}`);
+      } else {
+        throw new Error(`Error accessing Playit binary at ${binaryPath}: ${err.message}`);
+      }
+    }
   }
 
-  console.log('Resolved Playit binary path:', binaryPath);
   return binaryPath;
 }
 
@@ -95,123 +70,108 @@ export function registerPlayitHandlers(window: BrowserWindow) {
   mainWindow = window;
 
   ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event): Promise<StartTunnelResponse> => {
-    console.log('START_TUNNEL handler called.'); // Log when handler is called
-    // TODO: Implement logic to start the Playit binary
-    // TODO: Pass the server port to the Playit binary
-    // TODO: Listen for stdout/stderr from the Playit binary
-    // TODO: Parse Playit output to extract tunnel address and status
-    // TODO: Send tunnel status, address, and errors to the renderer via IPC_CHANNELS
-    // TODO: Handle Playit process exit
-
     if (playitProcess) {
-      console.log('Playit process already running.');
-      // TODO: Send appropriate status/error if already running
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: 'Tunnel is already starting or running.' });
-      return { success: false, message: 'Tunnel is already starting or running.' };
+      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { 
+        status: 'error', 
+        message: 'Tunnel is already running.' 
+      });
+      return { success: false, message: 'Tunnel is already running.' };
     }
 
     let binaryPath: string;
     try {
-        binaryPath = await getPlayitBinaryPath();
+      binaryPath = await getPlayitBinaryPath();
     } catch (error: any) {
-        console.error('Failed to get Playit binary path:', error);
-         // TODO: Send setup error to renderer
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: `Setup Error: ${error.message}` });
-         mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'Error', message: `Setup Error: ${error.message}` });
-        return { success: false, message: `Setup Error: ${error.message}` };
+      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { 
+        message: `Setup Error: ${error.message}` 
+      });
+      return { success: false, message: `Setup Error: ${error.message}` };
     }
 
-    // --- Task 1: Run Playit binary via child_process.spawn ---
-    // Initial spawn with no arguments to observe basic output.
-    const args: string[] = []; // Run without arguments to get claim link
-
-    console.log(`Starting Playit.gg tunnel: "${binaryPath}" ${args.join(' ')}`);
-
     try {
-      console.log('Attempting to spawn Playit process...');
-      // Comment out actual playit process for testing
-      /*
-      playitProcess = spawn(binaryPath, args, {
+      playitProcess = spawn(binaryPath, [], {
         detached: false,
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
         shell: false,
-        windowsVerbatimArguments: true,
-        env: { ...process.env, FORCE_COLOR: '0' }
-      });
-      */
-
-      // Simulate playit output for testing
-      const simulatedOutput = "Visit link to setup https://playit.gg/claim?token=test123";
-      console.log('Simulated Playit output:', simulatedOutput);
-      
-      // Process the simulated output
-      const claimLinkMatch = simulatedOutput.match(/Visit link to setup\s*(https:\/\/playit.gg\/claim\?token=[^\s]+)/);
-      if (claimLinkMatch && claimLinkMatch[1]) {
-        const claimLink = claimLinkMatch[1];
-        console.log('Found claim link:', claimLink);
-        mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { url: claimLink });
-      }
-
-      return { success: true, message: 'Playit process simulated.' };
-
-      /* Comment out the rest of the process handling
-      console.log('Playit process spawned successfully. Process ID:', playitProcess.pid);
-
-      // Add error handler for spawn
-      playitProcess.on('error', (err) => {
-        console.error('Error in Playit process:', err);
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { 
-          message: `Process error: ${err.message}` 
-        });
-      });
-
-      // --- Basic Playit stdout logging ---
-      let buffer = '';
-      playitProcess.stdout.on('data', (data) => {
-        const chunk = data.toString();
-        buffer += chunk;
-        
-        // Process the buffer for complete lines
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() || ''; // Keep the last potentially incomplete line
-
-        for (const line of lines) {
-          console.log('Playit output:', line);
-          
-          // Look for the claim link in each line
-          const claimLinkMatch = line.match(/Visit link to setup\s*(https:\/\/playit.gg\/claim\?token=[^\s]+)/);
-          if (claimLinkMatch && claimLinkMatch[1]) {
-            const claimLink = claimLinkMatch[1];
-            console.log('Found claim link:', claimLink);
-            mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { url: claimLink });
-            // Don't kill the process - let it continue running
-          }
+        env: { 
+          ...process.env, 
+          FORCE_COLOR: '0',
+          TERM: 'dumb',
+          CLICOLOR: '0',
+          NO_COLOR: '1'
         }
       });
+      
+      if (playitProcess.stdout) {
+        let foundLink: string | undefined = undefined;
 
-      // Handle stderr
-      playitProcess.stderr.on('data', (data) => {
-        const errorOutput = data.toString();
-        console.error('Playit error:', errorOutput);
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorOutput });
+        playitProcess.stdout.on('data', (data) => {
+          const chunk = data.toString();
+          const cleanChunk = chunk
+            .replace(/\x1B/g, '')
+            .replace(/\[2J/g, '')
+            .replace(/\[0m/g, '')
+            .replace(/8/g, '')
+            .replace(/no command provided, doing auto run/g, '')
+            .trim();
+          
+          if (cleanChunk) {
+            const claimLinkMatch = cleanChunk.match(/Visit link to setup\s*(https:\/\/playit\.gg\/claim\/[^\s]+)/);
+            if (claimLinkMatch && claimLinkMatch[1]) {
+              foundLink = claimLinkMatch[1];
+              if (!claimLinkFound) {
+                claimLinkFound = true;
+                // Send status update that link is received
+                mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, {
+                  status: 'link_received', // Use a specific status key
+                  message: 'Claim link received'
+                });
+                // Also send the link data for potential use in UI (e.g., copy button)
+                mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { url: foundLink });
+              }
+            }
+          }
+        });
+      } else {
+        // console.error('stdout is null'); // Keep this commented out unless needed for debugging
+      }
+
+      if (playitProcess.stderr) {
+        playitProcess.stderr.on('data', (data) => {
+          const error = data.toString();
+          // console.error('Playit stderr:', error); // Keep this commented out unless needed for debugging
+          // Optionally send to renderer if needed for error display
+          // mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: error });
+        });
+      } else {
+        // console.error('stderr is null'); // Keep this commented out unless needed for debugging
+      }
+
+      playitProcess.on('error', (error) => {
+        // console.error('Playit process error:', error.message); // Keep this commented out unless needed for debugging
+        // Optionally send to renderer
+        // mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: `Process error: ${error.message}` });
       });
 
       playitProcess.on('close', (code) => {
-        console.log(`Playit process exited with code ${code}`);
+        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { 
+          status: 'closed', 
+          message: `Process closed with code: ${code}` 
+        });
         playitProcess = null;
+        claimLinkFound = false; // Reset flag on close
       });
-      */
 
+      return { success: true, message: 'Playit process started.' };
     } catch (error: any) {
-      console.error('Failed to spawn Playit process:', error);
-      // TODO: Send spawn failure error and status update via IPC
-      console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_ERROR, { message: `Failed to spawn Playit process: ${error.message}` });
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: `Failed to spawn Playit process: ${error.message}` });
-      console.log('Sending IPC message:', IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: `Spawn failed: ${error.message}` });
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: `Spawn failed: ${error.message}` });
-      playitProcess = null; // Reset process state
-      return { success: false, message: `Failed to spawn Playit process: ${error.message}` };
+      console.error('Failed to start process:', error.message);
+      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { 
+        message: `Failed to start process: ${error.message}` 
+      });
+      playitProcess = null;
+      claimLinkFound = false; // Reset flag on close
+      return { success: false, message: `Failed to start process: ${error.message}` };
     }
   });
 }
