@@ -18,7 +18,7 @@ jobs:
           node-version: '20'
 
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-lint-${{ hashFiles('**/package-lock.json') }}
@@ -47,7 +47,7 @@ jobs:
           node-version: '20'
 
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-frontend-${{ hashFiles('electron-app/src/renderer/package-lock.json') }}
@@ -63,7 +63,7 @@ jobs:
         working-directory: ./electron-app/src/renderer/
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-frontend
           path: electron-app/out/renderer/
@@ -80,7 +80,7 @@ jobs:
           node-version: '20'
 
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-backend-${{ hashFiles('electron-app/src/main/package-lock.json') }}
@@ -96,7 +96,7 @@ jobs:
         working-directory: ./electron-app/src/main/
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-backend
           path: electron-app/out/main/
@@ -117,7 +117,7 @@ jobs:
           node-version: '20'
 
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-package-${{ hashFiles('electron-app/package-lock.json') }}
@@ -125,13 +125,13 @@ jobs:
             ${{ runner.os }}-node-package-
 
       - name: Download frontend build
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-frontend
           path: electron-app/out/renderer/
 
       - name: Download backend build
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-backend
           path: electron-app/out/main/
@@ -147,7 +147,7 @@ jobs:
         working-directory: ./electron-app
 
       - name: Upload packages
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: electron-app-${{ matrix.os }}
           path: electron-app/release/
