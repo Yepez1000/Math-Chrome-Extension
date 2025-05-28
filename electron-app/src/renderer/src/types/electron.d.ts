@@ -1,3 +1,6 @@
+import { SystemInfo, WorldImportParams, WorldValidationResponse } from '@shared/types'
+
+declare global {
 interface Window {
   electronAPI: {
     pickDirectory: () => Promise<string | null>;
@@ -8,5 +11,10 @@ interface Window {
       removeListener: (channel: string, func: (...args: any[]) => void) => void;
       removeAllListeners: (channel: string) => void;
     };
+    getSystemInfo: () => Promise<SystemInfo>
+    test: () => string
+  }
   }
 }
+
+export {} 

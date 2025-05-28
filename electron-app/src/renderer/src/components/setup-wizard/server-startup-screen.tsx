@@ -32,9 +32,29 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     reset,
   } = useServerStartupStore()
 
-  const { setTunnelStatus, setTunnelAddress, setTunnelError } = useServerStore(); // Access tunnel actions from server store
+  const { setTunnelStatus, setTunnelAddress, setTunnelError, tunnelAddress } = useServerStore();
 
   const [claimLink, setClaimLink] = useState<string | null>(null); // State for storing the claim link
+
+  // Function to copy the server address to the clipboard
+  const copyToClipboard = async () => {
+    if (tunnelAddress) {
+      try {
+        await navigator.clipboard.writeText(tunnelAddress);
+        toast({
+          title: "Copied!",
+          description: "Server address copied to clipboard.",
+        });
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        toast({
+          title: "Copy Failed",
+          description: "Could not copy server address to clipboard.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
 
   // Define the startup steps
   const startupSteps = [
@@ -70,6 +90,10 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
     if (shouldFail) {
       throw new Error()
+    }
+
+    if (handler === "getPlayitAddress") {
+      return "mc-server-12345.playit.gg:25565"
     }
 
     return true
@@ -215,17 +239,78 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
                   </div>
                 ))}
 
-                {!isComplete && !isError && currentStep < startupSteps.length && (
+                  {!isComplete && !isError && currentStep < startupSteps.length && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: [0.5, 1, 0.5] }}
+                      transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+                      className="text-cool-gray text-sm italic mt-2"
+                    >
+                      Processing...
+                    </motion.div>
+                  )}
+                </div>
+
+                {isComplete && tunnelAddress && (
                   <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [0.5, 1, 0.5] }}
-                    transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                    className="text-cool-gray text-sm italic mt-2"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    transition={{ duration: 0.5, delay: 0.5 }}
+                    className="mt-6 pt-4 border-t border-cool-gray/20"
                   >
-                    Processing...
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-linen font-medium mb-2">Your Server Address</h4>
+                        <div className="flex items-center gap-2">
+                          <div className="bg-space-cadet p-2 rounded flex-1 text-linen font-mono">{tunnelAddress}</div>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={copyToClipboard}
+                            className="border-linen/30 text-linen hover:bg-linen/10"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <p className="text-sm text-cool-gray mt-2">
+                          Share this address with friends so they can connect to your server
+                        </p>
+                      </div>
+
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
+                        <Button onClick={onComplete} className="w-full bg-linen text-night hover:bg-linen/90">
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Continue to Dashboard
+                        </Button>
+                      </motion.div>
+                    </div>
                   </motion.div>
                 )}
-              </div>
+
+                {isError && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    transition={{ duration: 0.5 }}
+                    className="mt-6 pt-4 border-t border-cool-gray/20"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-red-400">
+                        <AlertTriangle className="h-5 w-5" />
+                        <span>Server launch failed</span>
+                      </div>
+                      <p className="text-cool-gray">
+                        We encountered an issue while setting up your server. You can try again or contact support if the
+                        problem persists.
+                      </p>
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
+                        <Button onClick={handleRetry} className="w-full bg-linen text-night hover:bg-linen/90">
+                          Try Again
+                        </Button>
+                      </motion.div>
+                    </div>
+                  </motion.div>
+                )}
             </CardContent>
           </Card>
         </div>

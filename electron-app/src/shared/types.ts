@@ -27,3 +27,9 @@ export const IPC_CHANNELS = {
   CLAIM_LINK: 'claim-link',
   STOP_TUNNEL: 'stop-tunnel',
 } as const; 
+
+export interface SystemInfo {
+  totalRam: number;
+  availableRam: number;
+  cpuCores: number;
+} 

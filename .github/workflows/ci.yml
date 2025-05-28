@@ -6,9 +6,12 @@ on:
   pull_request:
 
 jobs:
-  frontend-build:
-    name: Front-end Build
+  type-check:
+    name: Type Check
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./electron-app
     steps:
       - uses: actions/checkout@v4
 
@@ -16,18 +19,49 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
 
       - name: Install Dependencies
-        run: npm install
-        working-directory: ./electron-app/src/renderer/
+        run: npm ci
+
+      - name: Type Check
+        run: npm run typecheck
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./electron-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
+
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Build React
         run: npm run build
-        working-directory: ./electron-app/src/renderer/
 
-  backend-build:
-    name: Back-end Build
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-frontend
+          path: electron-app/out/renderer/
+
+  build-backend:
+    name: Build Backend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./electron-app
     steps:
       - uses: actions/checkout@v4
 
@@ -35,28 +69,64 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
 
       - name: Install Dependencies
-        run: npm install
-        working-directory: ./electron-app/src/main/
+        run: npm ci
 
       - name: Build Main
         run: npm run build
-        working-directory: ./electron-app/src/main/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-backend
+          path: electron-app/out/main/
 
   package-app:
     name: Package App
-    runs-on: windows-latest
-    needs: [frontend-build, backend-build]
+    runs-on: ${{ matrix.os }}
+    needs: [build-frontend, build-backend]
+    defaults:
+      run:
+        working-directory: ./electron-app
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './electron-app/package-lock.json'
+
+      - name: Download Frontend Build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-frontend
+          path: out/renderer
+
+      - name: Download Backend Build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-backend
+          path: out/main
+
       - name: Install Dependencies
-        run: npm install
-        working-directory: ./electron-app
+        run: npm ci
 
       - name: Build & Package
         run: |
           npm run build
           npm run package
-        working-directory: ./electron-app
+
+      - name: Upload App Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-app-${{ matrix.os }}
+          path: release/
+          

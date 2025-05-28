@@ -2,6 +2,7 @@ import { ipcMain, dialog } from 'electron';
 import { join, isAbsolute, normalize } from 'path';
 import fs from 'fs/promises';
 import { DirectorySelectionResponse, WorldImportParams, WorldValidationResponse, IPC_CHANNELS } from '../../shared/types';
+import { devError } from '../utils/logger';
 
 export function registerWorldHandlers() {
   // Handle directory selection
@@ -95,7 +96,7 @@ export function registerWorldHandlers() {
       };
 
     } catch (error) {
-      console.error('World validation failed:', error);
+      devError('World validation failed:', error);
       return { 
         success: false, 
         message: error instanceof Error ? error.message : 'Unknown error occurred'

@@ -1,11 +1,13 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
+import { registerSystemInfoHandler } from './systemInfo';
 import { registerPlayitHandlers } from './playitHandlers';
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow) {
   registerServerDirectoryHandler();
   registerWorldHandlers();
+  registerSystemInfoHandler();
   registerPlayitHandlers(mainWindow);
 }
 

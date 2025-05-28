@@ -109,6 +109,9 @@ interface ServerState {
   // Tunnel state
   tunnel: TunnelState
 
+  // Add tunnelAddress directly to ServerState for easier access in components
+  tunnelAddress: string | null;
+
   // Actions
   setServerName: (name: string) => void
   setStatus: (status: ServerStatus) => void
@@ -415,6 +418,9 @@ export const useServerStore = create<ServerState>()(
           error: null,
           port: 25565
         },
+
+        // Add tunnelAddress directly to ServerState for easier access in components
+        tunnelAddress: null,
 
         // Actions
         setServerName: (name) => set({ serverName: name }),
