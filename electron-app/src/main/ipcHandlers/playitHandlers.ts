@@ -166,6 +166,17 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 export function cleanupPlayitProcess() {
     if (playitProcess) {
         console.log('Cleaning up Playit process on shutdown...');
+        // Remove all listeners to prevent accessing the object after it's destroyed
+        if (playitProcess.stdout) {
+            playitProcess.stdout.removeAllListeners('data');
+        }
+        if (playitProcess.stderr) {
+            // Add stderr listener removal back in case it was removed earlier
+            playitProcess.stderr.removeAllListeners('data');
+        }
+        playitProcess.removeAllListeners('close');
+        playitProcess.removeAllListeners('error');
+
         playitProcess.kill('SIGTERM');
         playitProcess = null;
     }

@@ -228,13 +228,6 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
               </div>
             </CardContent>
           </Card>
-
-          {/* Comment out the claim link display temporarily */}
-          
-
-           {/* Display tunnel address when connected */}
-           
-
         </div>
       </CardContent>
     </Card>
