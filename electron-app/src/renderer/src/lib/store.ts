@@ -2,16 +2,15 @@ import { create } from "zustand"
 import { devtools, persist } from "zustand/middleware"
 import type { LucideIcon } from "lucide-react"
 
-export type ServerStatus = "offline" | "starting" | "online" | "stopping" | "error"
-
-export type TunnelStatus = "idle" | "starting" | "connected" | "error" | "stopping"
-
-interface TunnelState {
+export type TunnelStatus = "idle" | "starting" | "running" | "error" | "stopping"
+export type TunnelState = {
   status: TunnelStatus
   address: string | null
   error: string | null
   port: number
 }
+
+export type ServerStatus = "online" | "offline" | "starting" | "stopping"
 
 export type PlayerData = {
   id: string
@@ -108,9 +107,6 @@ interface ServerState {
 
   // Tunnel state
   tunnel: TunnelState
-
-  // Add tunnelAddress directly to ServerState for easier access in components
-  tunnelAddress: string | null;
 
   // Actions
   setServerName: (name: string) => void
@@ -419,9 +415,6 @@ export const useServerStore = create<ServerState>()(
           port: 25565
         },
 
-        // Add tunnelAddress directly to ServerState for easier access in components
-        tunnelAddress: null,
-
         // Actions
         setServerName: (name) => set({ serverName: name }),
 
@@ -661,7 +654,7 @@ export const useServerStore = create<ServerState>()(
         },
       }),
       {
-        name: "server-store",
+        name: "server-storage",
       },
     ),
   ),
