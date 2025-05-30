@@ -60,6 +60,9 @@ async function handlePlayitApiChain(claimCode: string, serverPort: number): Prom
       throw new Error(`Failed to fetch login page: ${loginPageResponse.statusText} - ${errorText}`);
     }
 
+    // const loginPageHtml = await loginPageResponse.text();
+    // console.log('Login page HTML body:', loginPageHtml);
+
     // Extract the session cookie
     const setCookieHeader = loginPageResponse.headers.get('Set-Cookie');
     if (setCookieHeader) {
@@ -94,22 +97,29 @@ async function handlePlayitApiChain(claimCode: string, serverPort: number): Prom
       '_action': 'guest'
     });
 
+    // Explicitly build the form data string to ensure parameter order
+    const guestInitBody = `redirect=${encodeURIComponent(guestInitBodyParams.get('redirect') ?? '')}&_data=${encodeURIComponent(guestInitBodyParams.get('_data') ?? '')}&email=&password=&confirm-password=&_action=${encodeURIComponent(guestInitBodyParams.get('_action') ?? '')}`;
+
     const guestInitResponse = await fetch(`https://playit.gg/login/create?${guestInitUrlParams.toString()}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Referer': `https://playit.gg/login/create?redirect=%2Fclaim%2F${claimCode}%3F`,
         'Accept': '*/*',
         'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Accept-Language': 'en-US,en;q=0.9',
         'Origin': 'https://playit.gg',
+        'Priority': 'u=1, i',
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-origin',
+        'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
         'Cookie': `__session=${guestSessionId}`
       },
-      body: guestInitBodyParams.toString()
+      body: guestInitBody
     });
     console.log('Guest session initiation response status:', guestInitResponse.status);
 
