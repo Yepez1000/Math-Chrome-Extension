@@ -20,12 +20,12 @@ export const IPC_CHANNELS = {
   IMPORT_WORLD: 'import-world',
   SELECT_SERVER_DIRECTORY: 'select-server-directory',
   START_TUNNEL: 'start-tunnel',
-  TUNNEL_ADDRESS: 'tunnel-address',
-  TUNNEL_ERROR: 'tunnel-error',
-  TUNNEL_STATUS: 'tunnel-status',
-  TUNNEL_OUTPUT: 'tunnel-output',
-  CLAIM_LINK: 'claim-link',
   STOP_TUNNEL: 'stop-tunnel',
+  TUNNEL_STATUS: 'tunnel-status',
+  TUNNEL_ERROR: 'tunnel-error',
+  TUNNEL_ADDRESS: 'tunnel-address',
+  CLAIM_LINK: 'claim-link',
+  PLAYIT_API_CHAIN: 'playit-api-chain'
 } as const; 
 
 export interface SystemInfo {

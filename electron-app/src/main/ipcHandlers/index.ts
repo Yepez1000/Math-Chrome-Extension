@@ -3,12 +3,14 @@ import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
 import { registerSystemInfoHandler } from './systemInfo';
 import { registerPlayitHandlers } from './playitHandlers';
+import { registerPlayitApiHandlers } from './playitApiHandler';
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow) {
   registerServerDirectoryHandler();
   registerWorldHandlers();
   registerSystemInfoHandler();
   registerPlayitHandlers(mainWindow);
+  registerPlayitApiHandlers(ipcMain);
 }
 
 ipcMain.handle('show-prompt', async (_, title: string, defaultValue: string) => {

@@ -19,12 +19,6 @@ interface ElectronAPI {
 
 // Implement the API with whitelisted IPC calls and other functionalities
 const api: ElectronAPI = {
-  getTempDir: () => ipcRenderer.invoke('get-temp-dir'),
-  writeTempFile: (path: string, data: string | Uint8Array) => {
-    // *** IMPORTANT: Sanitize path and validate data here before invoking IPC ***
-    // Ensure path is within allowed directories and data is not malicious
-    return ipcRenderer.invoke('write-temp-file', path, data)
-  },
   pickDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.PICK_DIRECTORY),
   importWorld: (params: WorldImportParams) => {
     // *** IMPORTANT: Sanitize and validate params here before invoking IPC ***
@@ -42,10 +36,8 @@ const api: ElectronAPI = {
         IPC_CHANNELS.IMPORT_WORLD,
         IPC_CHANNELS.START_TUNNEL,
         IPC_CHANNELS.STOP_TUNNEL,
-        'get-temp-dir', // Whitelist get-temp-dir
-        'write-temp-file', // Whitelist write-temp-file
-        'get-system-info', // Whitelist get-system-info
-        // Add other invoke channels as needed
+        IPC_CHANNELS.PLAYIT_API_CHAIN,
+        'get-system-info'
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)

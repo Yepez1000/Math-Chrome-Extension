@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { motion, AnimatePresence } from "framer-motion"
@@ -32,9 +32,36 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     reset,
   } = useServerStartupStore()
 
-  const { setTunnelStatus, setTunnelAddress, setTunnelError, tunnelAddress } = useServerStore();
+  const { setTunnelStatus, setTunnelAddress, setTunnelError, tunnel } = useServerStore();
+  const tunnelAddress = tunnel.address;
+  const [claimLink, setClaimLink] = useState<string | null>(null);
+  const [serverPort, setServerPort] = useState(25565);
 
-  const [claimLink, setClaimLink] = useState<string | null>(null); // State for storing the claim link
+  const hasRun = useRef(false);
+
+  // Function to handle claim link
+  const handleClaimLink = useCallback(async (data: { claimCode: string }) => {
+    try {
+      const response = await window.electronAPI.ipcRenderer.invoke(
+        IPC_CHANNELS.PLAYIT_API_CHAIN,
+        data.claimCode,
+        serverPort
+      );
+
+      if (response.success) {
+        console.log('Playit setup completed:', response.data);
+        setTunnelStatus('running');
+      } else {
+        console.error('Playit setup failed:', response.message);
+        setTunnelError(response.message);
+        setTunnelStatus('error');
+      }
+    } catch (error) {
+      console.error('Failed to start Playit API chain:', error);
+      setTunnelError('Failed to start Playit setup');
+      setTunnelStatus('error');
+    }
+  }, [serverPort, setTunnelStatus, setTunnelError]);
 
   // Function to copy the server address to the clipboard
   const copyToClipboard = async () => {
@@ -150,8 +177,6 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     }
   }
 
-  // Start the sequence when component mounts
-  const hasRun = useRef(false)
   useEffect(() => {
     if (!hasRun.current) {
       executeStep(0)
@@ -161,45 +186,35 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     // Add listeners for tunnel status updates
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_STATUS, (data) => {
        console.log('Tunnel Status Update:', data);
-       // Use the store action to set tunnel status
        setTunnelStatus(data.status === 'Error' || data.status === 'Disconnected' ? 'error' : data.status);
        addStatusMessage({ message: `Tunnel Status: ${data.message}`, status: data.status === 'Error' || data.status === 'Disconnected' ? 'error' : 'success' });
     });
 
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ADDRESS, (data) => {
        console.log('Tunnel Address:', data);
-       // Use the store action to set tunnel address
        setTunnelAddress(data.address);
        addStatusMessage({ message: `Tunnel Address: ${data.address}`, status: 'success' });
-       // TODO: Store the address in the store
     });
 
-     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, (data) => {
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, (data) => {
        console.error('Tunnel Error:', data);
-       // Use the store action to set tunnel error
        setTunnelError(data.message);
        addStatusMessage({ message: `Tunnel Error: ${data.message}`, status: 'error' });
        setIsError(true);
-       setIsComplete(false); // Ensure isComplete is false on tunnel error
+       setIsComplete(false);
     });
 
     // Add listener for claim link
-    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.CLAIM_LINK, (data) => {
-       console.log('Claim Link Received:', data);
-       // setClaimLink(data.url); // Store the claim link - commented out
-       console.log(`Captured Claim Link: ${data.url}`); // Log the captured link
-       addStatusMessage({ message: `Claim link received. Please authorize the agent.`, status: 'pending' }); // Add a status message
-       // We don't set tunnel status here, as it's still in a 'claiming' phase
-    });
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.CLAIM_LINK, handleClaimLink);
 
     // Cleanup listeners
     return () => {
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_STATUS);
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ADDRESS);
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.TUNNEL_ERROR);
-      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.CLAIM_LINK); // Cleanup claim link listener
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.CLAIM_LINK, handleClaimLink);
     }
-  }, [])
+  }, [serverPort, setTunnelStatus, setTunnelError, setTunnelAddress, addStatusMessage, setIsError, setIsComplete, handleClaimLink]);
 
   // Handle retry
   const handleRetry = () => {

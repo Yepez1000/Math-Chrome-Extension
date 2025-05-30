@@ -104,10 +104,10 @@ export function registerPlayitHandlers(window: BrowserWindow) {
       });
       
       if (playitProcess.stdout) {
-        let foundLink: string | undefined = undefined;
-
         playitProcess.stdout.on('data', (data) => {
           const chunk = data.toString();
+          console.log('Raw stdout chunk:', chunk); // Debug log
+          
           const cleanChunk = chunk
             .replace(/\x1B/g, '')
             .replace(/\[2J/g, '')
@@ -116,19 +116,30 @@ export function registerPlayitHandlers(window: BrowserWindow) {
             .replace(/no command provided, doing auto run/g, '')
             .trim();
           
+          console.log('Cleaned chunk:', cleanChunk); // Debug log
+          
           if (cleanChunk) {
-            const claimLinkMatch = cleanChunk.match(/Visit link to setup\s*(https:\/\/playit\.gg\/claim\/[^\s]+)/);
-            if (claimLinkMatch && claimLinkMatch[1]) {
-              foundLink = claimLinkMatch[1];
+            // More precise pattern matching
+            const claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
+            if (claimCodeMatch && claimCodeMatch[1]) {
+              const claimCode = claimCodeMatch[1];
+              console.log('Found claim code:', claimCode); // Debug log
+              
               if (!claimLinkFound) {
+                console.log('Sending claim code event...'); // Debug log
                 claimLinkFound = true;
-                // Send status update that link is received
+                // Send status update that claim code is received
                 mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, {
-                  status: 'link_received', // Use a specific status key
-                  message: 'Claim link received'
+                  status: 'link_received',
+                  message: 'Claim code received'
                 });
-                // Also send the link data for potential use in UI (e.g., copy button)
-                mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { url: foundLink });
+                // Send just the claim code instead of the full URL
+                mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { claimCode });
+                // Remove the stdout listener after sending the claim code
+                playitProcess?.stdout?.removeAllListeners('data');
+                console.log('Removed stdout listener'); // Debug log
+              } else {
+                console.log('Claim code already found, ignoring'); // Debug log
               }
             }
           }
@@ -181,3 +192,5 @@ export function cleanupPlayitProcess() {
         playitProcess = null;
     }
 }
+
+export { playitProcess };
