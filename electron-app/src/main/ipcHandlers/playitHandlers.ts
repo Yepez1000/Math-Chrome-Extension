@@ -3,10 +3,10 @@ import { spawn, ChildProcess, exec } from 'child_process';
 import { IPC_CHANNELS } from '../../shared/types';
 import { join } from 'path';
 import fs from 'fs/promises'; // Use promises version of fs
+import { handlePlayitApiChain } from './playitApiHandler'; // Import the API handler
 
 let playitProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
-let claimLinkFound = false; // Flag to ensure link status is sent only once
 
 type StartTunnelResponse = { success: boolean; message: string };
 
@@ -65,110 +65,207 @@ async function getPlayitBinaryPath(): Promise<string> {
   return binaryPath;
 }
 
-
 export function registerPlayitHandlers(window: BrowserWindow) {
   mainWindow = window;
 
   ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event): Promise<StartTunnelResponse> => {
-    if (playitProcess) {
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { 
-        status: 'error', 
-        message: 'Tunnel is already running.' 
-      });
-      return { success: false, message: 'Tunnel is already running.' };
-    }
+    const maxFullRetries = 5; // Maximum number of full retry attempts
+    let fullRetryAttempts = 0;
+    let tunnelSetupSuccess = false;
+    let finalMessage = 'Unknown error occurred.';
 
-    let binaryPath: string;
-    try {
-      binaryPath = await getPlayitBinaryPath();
-    } catch (error: any) {
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { 
-        message: `Setup Error: ${error.message}` 
-      });
-      return { success: false, message: `Setup Error: ${error.message}` };
-    }
+    while (fullRetryAttempts < maxFullRetries && !tunnelSetupSuccess) {
+      fullRetryAttempts++;
+      console.log(`Starting full setup attempt ${fullRetryAttempts}/${maxFullRetries}...`);
 
-    try {
-      playitProcess = spawn(binaryPath, [], {
-        detached: false,
-        windowsHide: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
-        env: { 
-          ...process.env, 
-          FORCE_COLOR: '0',
-          TERM: 'dumb',
-          CLICOLOR: '0',
-          NO_COLOR: '1'
-        }
-      });
-      
-      if (playitProcess.stdout) {
-        playitProcess.stdout.on('data', (data) => {
-          const chunk = data.toString();
-          console.log('Raw stdout chunk:', chunk); // Debug log
-          
-          const cleanChunk = chunk
-            .replace(/\x1B/g, '')
-            .replace(/\[2J/g, '')
-            .replace(/\[0m/g, '')
-            .replace(/8/g, '')
-            .replace(/no command provided, doing auto run/g, '')
-            .trim();
-          
-          console.log('Cleaned chunk:', cleanChunk); // Debug log
-          
-          if (cleanChunk) {
-            // More precise pattern matching
-            const claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
-            if (claimCodeMatch && claimCodeMatch[1]) {
-              const claimCode = claimCodeMatch[1];
-              console.log('Found claim code:', claimCode); // Debug log
-              
-              if (!claimLinkFound) {
-                console.log('Sending claim code event...'); // Debug log
-                claimLinkFound = true;
-                // Send status update that claim code is received
-                mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, {
-                  status: 'link_received',
-                  message: 'Claim code received'
-                });
-                // Send just the claim code instead of the full URL
-                mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { claimCode });
-                // Remove the stdout listener after sending the claim code
-                playitProcess?.stdout?.removeAllListeners('data');
-                console.log('Removed stdout listener'); // Debug log
-              } else {
-                console.log('Claim code already found, ignoring'); // Debug log
-              }
-            }
-          }
-        });
-      } else {
-        // console.error('stdout is null'); // Keep this commented out unless needed for debugging
+      // 1. Clean up previous process if it exists
+      cleanupPlayitProcess();
+      await delay(100); // Give process a moment to terminate cleanly
+
+      let binaryPath: string;
+      try {
+        binaryPath = await getPlayitBinaryPath();
+      } catch (error: any) {
+        const errorMessage = `Setup Error: ${error.message}`;;
+        console.error(errorMessage);
+        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
+        finalMessage = errorMessage;
+        // No point retrying if binary path cannot be determined
+        break;
       }
 
-      playitProcess.on('close', (code) => {
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { 
-          status: 'closed', 
-          message: `Process closed with code: ${code}` 
-        });
-        playitProcess = null;
-        claimLinkFound = false; // Reset flag on close
-      });
+      // 2. Spawn a new process and listen for initial stdout messages
+      let claimCode: string | null = null;
+      let needsFullRetrySignal = false; // Signal to immediately retry full sequence
+      const stdoutTimeout = 30000; // 30 seconds timeout for initial stdout messages
 
-      return { success: true, message: 'Playit process started.' };
-    } catch (error: any) {
-      console.error('Failed to start process:', error.message);
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { 
-        message: `Failed to start process: ${error.message}` 
-      });
-      playitProcess = null;
-      claimLinkFound = false; // Reset flag on close
-      return { success: false, message: `Failed to start process: ${error.message}` };
+      try {
+        playitProcess = spawn(binaryPath, [], {
+          detached: false,
+          windowsHide: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: false,
+          env: {
+            ...process.env,
+            FORCE_COLOR: '0',
+            TERM: 'dumb',
+            CLICOLOR: '0',
+            NO_COLOR: '1'
+          }
+        });
+
+        if (!playitProcess.stdout) {
+          throw new Error('Failed to get stdout from Playit process.');
+        }
+
+        console.log('New Playit process spawned. Listening for initial stdout...');
+
+        // Use a Promise to wait for either claim code or 'Visit link' message
+        const initialStdoutPromise = new Promise<{
+          type: 'claimCode' | 'visitLink';
+          value?: string
+        } | null>((resolve) => {
+          const listener = (data: any) => {
+            const chunk = data.toString();
+            console.log('Initial stdout chunk:', chunk);
+
+            const cleanChunk = chunk
+               .replace(/\x1B/g, '')
+               .replace(/\[2J/g, '')
+               .replace(/\[0m/g, '')
+               .replace(/8/g, '')
+               .replace(/no command provided, doing auto run/g, '')
+               .trim();
+
+            console.log('Cleaned initial chunk:', cleanChunk);
+
+            if (cleanChunk) {
+              const claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
+              if (claimCodeMatch && claimCodeMatch[1]) {
+                // Found claim code, proceed with API chain
+                playitProcess!.stdout?.removeListener('data', listener);
+                console.log('Claim code found in initial stdout.');
+                resolve({ type: 'claimCode', value: claimCodeMatch[1] });
+              } else if (cleanChunk.includes("Visit link to setup")) {
+                 // Saw 'Visit link' but no claim code, signals need for full retry
+                 playitProcess!.stdout?.removeListener('data', listener);
+                 console.log('"Visit link to setup..." seen in initial stdout, but no claim code.');
+                 resolve({ type: 'visitLink' });
+              }
+            }
+          };
+          playitProcess!.stdout?.on('data', listener);
+
+           // Handle process exit before finding the required output
+          playitProcess!.on('close', (code) => {
+               console.log(`Playit process closed with code ${code} before initial stdout found.`);
+               playitProcess?.stdout?.removeListener('data', listener); // Ensure listener is removed
+               resolve(null); // Indicate failure to find expected output
+          });
+
+           playitProcess!.on('error', (err) => {
+               console.error(`Playit process error during initial stdout wait: ${err.message}`);
+               playitProcess?.stdout?.removeListener('data', listener); // Ensure listener is removed
+               resolve(null); // Indicate failure
+           });
+        });
+
+        // Wait for initial stdout with a timeout
+        const timeoutPromise = new Promise<null>(resolve => setTimeout(() => { console.log('Initial stdout timeout.'); resolve(null); }, stdoutTimeout));
+        const initialStdoutResult = await Promise.race([initialStdoutPromise, timeoutPromise]);
+
+        if (!initialStdoutResult) {
+            throw new Error('Timed out or process closed waiting for claim link or "Visit link to setup..." in stdout.');
+        }
+
+        if (initialStdoutResult.type === 'visitLink') {
+            // Saw 'Visit link' without claim code, signal for full retry
+            needsFullRetrySignal = true;
+            finalMessage = 'Detected "Visit link to setup..." without claim code. Retrying full process.';
+            console.warn(finalMessage);
+            continue; // Skip API chain and go to next full retry attempt
+        }
+
+        // If we reach here, type must be 'claimCode'
+        claimCode = initialStdoutResult.value || null; // Should not be null if type is 'claimCode'
+
+        if (!claimCode) {
+             throw new Error('Claim code not found in initial stdout.');
+        }
+
+        console.log('Claim code received:', claimCode);
+
+        // Send status update that claim code is received
+         mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, {
+           status: 'link_received',
+           message: 'Claim code received'
+         });
+         // Send just the claim code instead of the full URL
+         mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { claimCode });
+
+
+      } catch (error: any) {
+        const errorMessage = `Process Spawn or Initial Stdout Error: ${error.message}`;
+        console.error(errorMessage);
+        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
+        finalMessage = errorMessage;
+        needsFullRetrySignal = true; // Treat spawn/initial stdout errors as needing full retry
+        // Continue to next full retry attempt
+        continue;
+      }
+
+      // 3. Call the API chain with the claim code
+      console.log('Calling Playit API chain with claim code:', claimCode);
+      // Need to ensure claimCode is not null here, which is handled by the catch block above
+      const apiChainResult = await handlePlayitApiChain(claimCode!, 25565); // Assuming 25565 is the server port
+      console.log('API chain result:', apiChainResult);
+
+      if (apiChainResult.success) {
+        // API chain reported success (Program approved seen)
+        tunnelSetupSuccess = true;
+        finalMessage = apiChainResult.message;
+        console.log('Tunnel setup successful!');
+        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'connected', message: 'Tunnel connected!' });
+        // Break the full retry loop
+        break;
+      } else if (apiChainResult.message.includes("Visit link to setup...")) {
+         // API chain detected 'Visit link', signal for full retry
+         needsFullRetrySignal = true;
+         finalMessage = apiChainResult.message + ' Retrying full process.';
+         console.warn(finalMessage);
+         // Continue to next full retry attempt
+         continue;
+      } else {
+        // API chain failed for other reasons (e.g., timeout waiting for Program approved)
+        finalMessage = apiChainResult.message;
+        console.error('API chain failed:', finalMessage);
+        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: finalMessage });
+        // Continue to next full retry attempt unless it's the last one
+         if (fullRetryAttempts >= maxFullRetries) {
+             break;
+         }
+         await delay(5000); // Wait before retrying after a non-'Visit link' API chain failure
+         continue;
+      }
     }
+
+    // --- End of Retry Loop ---
+
+    if (!tunnelSetupSuccess) {
+      console.error('Full tunnel setup failed after multiple attempts.');
+      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: finalMessage });
+      // Ensure process is cleaned up on final failure
+      cleanupPlayitProcess();
+    }
+
+    // playitProcess remains set if tunnelSetupSuccess is true, allowing cleanup on app quit
+
+    return { success: tunnelSetupSuccess, message: finalMessage };
   });
 }
+
+// Add a small delay utility function
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Export the process variable so it can be accessed for cleanup on app quit
 // This requires modifying how playitProcess is declared or adding a cleanup function

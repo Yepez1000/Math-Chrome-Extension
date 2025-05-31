@@ -1,10 +1,7 @@
 import { IPC_CHANNELS } from '../../shared/types';
 import { getPlayitProcess } from './playitHandlers'; // ✅ Use relative path correctly
 
-const process = getPlayitProcess();
-if (process) {
-  console.log('Playit process is running!');
-}
+let isProcessing = false;
 
 interface PlayitApiResponse {
   success: boolean;
@@ -20,12 +17,9 @@ interface PlayitApiResponse {
 // Add delay between requests to avoid rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Lock mechanism to prevent duplicate API calls
-let isProcessing = false;
-
 //handlePlayitApiChain for Guest Flow
 
-async function handlePlayitApiChain(claimCode: string, serverPort: number): Promise<PlayitApiResponse> {
+export async function handlePlayitApiChain(claimCode: string, serverPort: number): Promise<PlayitApiResponse> {
   if (isProcessing) {
     return {
       success: false,
@@ -64,11 +58,45 @@ async function handlePlayitApiChain(claimCode: string, serverPort: number): Prom
   });
 
   try {
+    // Add stdout listener at the beginning
+    let programApprovedSeen = false;
+    let visitLinkNeeded = false; // New flag
+    const process = getPlayitProcess();
+    if (process && process.stdout) {
+      console.log('Attaching stdout listener at the beginning...');
+      const listener = (data: any) => {
+        const chunk = data.toString();
+        console.log('Raw stdout chunk:', chunk);
+
+        const cleanChunk = chunk
+          .replace(/\x1B/g, '')
+          .replace(/\[2J/g, '')
+          .replace(/\[0m/g, '')
+          .replace(/8/g, '')
+          .replace(/no command provided, doing auto run/g, '')
+          .trim();
+
+        console.log('Cleaned chunk:', cleanChunk);
+
+        if (cleanChunk.includes("Program approved")) {
+          console.log('"Program approved" detected in stdout. Stopping polling.');
+          programApprovedSeen = true;
+          // Consider detaching listener here if appropriate for your process management
+        } else if (cleanChunk.includes("Visit link to setup")) { // Check for this specific message
+           console.log('"Visit link to setup..." detected in stdout. Signaling need for full retry.');
+           visitLinkNeeded = true;
+           // Consider detaching listener here
+        }
+      };
+      process.stdout.on('data', listener);
+      // Note: The listener is attached. It will remain active until the process exits or it's explicitly removed.
+      // Consider if/how to detach the listener if needed later.
+    }
+
     // Step 1: GET initial claim link
     console.log('Visiting initial claim link...');
     const initialClaimUrl = `https://playit.gg/claim/${claimCode}`;
     const initialClaimResponse = await fetch(initialClaimUrl, { method: 'GET', headers: buildHeaders({ 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,gzip,deflate,br;q=0.9' }) });
-    updateCookies(initialClaimResponse.headers.get('set-cookie'));
     console.log('Initial claim link response status:', initialClaimResponse.status);
     // await delay(1000); // Optional: add a small delay if needed
 
@@ -76,10 +104,9 @@ async function handlePlayitApiChain(claimCode: string, serverPort: number): Prom
     console.log('Visiting login/create page...');
     const loginCreateUrl = `https://playit.gg/login/create?redirect=%2Fclaim%2F${claimCode}%3F`;
     const loginCreateResponse = await fetch(loginCreateUrl, { method: 'GET', headers: buildHeaders({ 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,gzip,deflate,br;q=0.9' }) });
-    updateCookies(loginCreateResponse.headers.get('set-cookie'));
     console.log('Login/create page response status:', loginCreateResponse.status);
     // await delay(1000); // Optional: add a small delay if needed
-
+    
     // Step 3: POST guest session initiation
     console.log('Initiating guest session POST...');
     const guestInitUrl = `https://playit.gg/login/create?redirect=/claim/${claimCode}?&_data=routes/login.create`;
@@ -108,66 +135,89 @@ async function handlePlayitApiChain(claimCode: string, serverPort: number): Prom
         console.error('Guest session initiation failed:', errorText);
         throw new Error(`Guest session initiation failed: ${guestInitResponse.statusText} - ${errorText}`);
     }
-     // Need to handle redirect if 302 is returned by POST (fetch does this by default, but cookies need manual update)
-    // Assuming fetch follows 302 automatically, the cookies are updated above.
-
-
-    // Removed Step 4: GET final claim page
-    // console.log('Visiting final claim page...');
-    // const finalClaimUrl = `https://playit.gg/claim/${claimCode}`; ...
-
+     // Assuming fetch follows 302 automatically, the cookies are updated above.
 
     // Now proceed with the polling GET requests using accumulated cookies
     console.log('Starting polling GET requests using accumulated cookies...');
     const getHeaders = buildHeaders({'Accept': '*/*'}); // General GET headers with latest cookies
+    let attempts = 0;
+    const maxAttempts = 60; // Poll for max 60 attempts (approx 60 seconds with 1s delay)
 
-    // Add GET request to /claim/{claimCode}?_data=root
-    const claimGetUrl = `https://playit.gg/claim/${claimCode}?_data=root`;
-    const claimGetResponse = await fetch(claimGetUrl, {
-      method: 'GET',
-      headers: getHeaders
-    });
-    console.log('Claim GET response status:', claimGetResponse.status);
+    // Poll until "Program approved" is seen, "Visit link to setup" is seen, or max attempts reached
+    while (!programApprovedSeen && !visitLinkNeeded && attempts < maxAttempts) {
+      attempts++;
+      console.log(`Polling attempt ${attempts}/${maxAttempts}...`);
 
-     // Log the response body of the first GET request
-     try {
-       const claimGetData = await claimGetResponse.json();
-       console.log('Claim GET response body:', claimGetData);
-     } catch (error) {
-       console.error('Error parsing first GET response body:', error);
-     }
+      // Add GET request to /claim/{claimCode}?_data=root
+      const claimGetUrl = `https://playit.gg/claim/${claimCode}?_data=root`;
+      const claimGetResponse = await fetch(claimGetUrl, {
+        method: 'GET',
+        headers: getHeaders
+      });
+      console.log('Claim GET response status:', claimGetResponse.status);
 
-    // Add GET request to /claim/{claimCode}?_data=routes%2Fclaim%2F%24claimCode (hardcoded)
-    const claimRoutesUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode`;
-    const claimRoutesResponse = await fetch(claimRoutesUrl, {
-      method: 'GET',
-      headers: getHeaders
-    });
-    console.log('Claim routes GET response status:', claimRoutesResponse.status);
+      // Log the response body of the first GET request
+       try {
+         const claimGetData = await claimGetResponse.json();
+         console.log('Claim GET response body:', claimGetData);
+       } catch (error) {
+         console.error('Error parsing first GET response body:', error);
+       }
 
-    // Log the response body of the second GET request (the one expected to be WaitingForAgent)
-    try {
-        const claimRoutesData = await claimRoutesResponse.json();
-        console.log('Claim routes GET response body:', claimRoutesData);
-    } catch (error) {
-        console.error('Error parsing second GET response body:', error);
+      // Add GET request to /claim/{claimCode}?_data=routes%2Fclaim%2F%24claimCode (hardcoded)
+      const claimRoutesUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode`;
+      const claimRoutesResponse = await fetch(claimRoutesUrl, {
+        method: 'GET',
+        headers: getHeaders
+      });
+      console.log('Claim routes GET response status:', claimRoutesResponse.status);
+
+      // Log the response body of the second GET request (the one expected to be WaitingForAgent)
+      try {
+          const claimRoutesData = await claimRoutesResponse.json();
+          console.log('Claim routes GET response body:', claimRoutesData);
+      } catch (error) {
+          console.error('Error parsing second GET response body:', error);
+      }
+
+      // Add GET request to /claim/{claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex (hardcoded)
+      const claimRoutesIndexUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex`;
+      const claimRoutesIndexResponse = await fetch(claimRoutesIndexUrl, {
+        method: 'GET',
+        headers: getHeaders
+      });
+      console.log('Claim routes index GET response status:', claimRoutesIndexResponse.status);
+
+       // Log the response body of the third GET request
+       try {
+          const claimRoutesIndexData = await claimRoutesIndexResponse.json();
+          console.log('Claim routes index GET response body:', claimRoutesIndexData);
+       } catch (error) {
+          console.error('Error parsing third GET response body:', error);
+      }
+
+      // Wait for 1 second before the next attempt
+      if (!programApprovedSeen && !visitLinkNeeded && attempts < maxAttempts) {
+         await delay(1000);
+      }
     }
 
-    // Add GET request to /claim/{claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex (hardcoded)
-    const claimRoutesIndexUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex`;
-    const claimRoutesIndexResponse = await fetch(claimRoutesIndexUrl, {
-      method: 'GET',
-      headers: getHeaders
-    });
-    console.log('Claim routes index GET response status:', claimRoutesIndexResponse.status);
-
-     // Log the response body of the third GET request
-     try {
-        const claimRoutesIndexData = await claimRoutesIndexResponse.json();
-        console.log('Claim routes index GET response body:', claimRoutesIndexData);
-     } catch (error) {
-        console.error('Error parsing third GET response body:', error);
+    // Check why the polling loop ended
+    if (visitLinkNeeded) {
+       console.warn('Polling stopped because "Visit link to setup..." was seen. Full retry needed.');
+       return {
+         success: false,
+         message: '"Visit link to setup..." detected in Playit agent stdout. Requires full retry with new process.'
+       };
+    } else if (!programApprovedSeen) {
+      console.warn('Polling finished without seeing "Program approved" after max attempts.');
+      return {
+        success: false,
+        message: 'Timed out waiting for "Program approved" from Playit agent.'
+      };
     }
+
+    console.log('"Program approved" seen. Proceeding.');
 
     return {
       success: true,
@@ -175,7 +225,7 @@ async function handlePlayitApiChain(claimCode: string, serverPort: number): Prom
       data: {
         claimCode,
         serverPort,
-        sessionId: 'unknown' // We don\'t have the session ID in this simplified approach
+        sessionId: 'unknown' // We\'re not sure about the session ID in this simplified approach
       }
     };
 
