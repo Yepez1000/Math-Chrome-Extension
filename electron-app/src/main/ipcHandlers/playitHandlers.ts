@@ -193,4 +193,6 @@ export function cleanupPlayitProcess() {
     }
 }
 
-export { playitProcess };
+export function getPlayitProcess(): ChildProcess | null {
+  return playitProcess;
+}
