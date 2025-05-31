@@ -156,14 +156,6 @@ export async function handlePlayitApiChain(claimCode: string, serverPort: number
       });
       console.log('Claim GET response status:', claimGetResponse.status);
 
-      // Log the response body of the first GET request
-       try {
-         const claimGetData = await claimGetResponse.json();
-         console.log('Claim GET response body:', claimGetData);
-       } catch (error) {
-         console.error('Error parsing first GET response body:', error);
-       }
-
       // Add GET request to /claim/{claimCode}?_data=routes%2Fclaim%2F%24claimCode (hardcoded)
       const claimRoutesUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode`;
       const claimRoutesResponse = await fetch(claimRoutesUrl, {
@@ -172,14 +164,6 @@ export async function handlePlayitApiChain(claimCode: string, serverPort: number
       });
       console.log('Claim routes GET response status:', claimRoutesResponse.status);
 
-      // Log the response body of the second GET request (the one expected to be WaitingForAgent)
-      try {
-          const claimRoutesData = await claimRoutesResponse.json();
-          console.log('Claim routes GET response body:', claimRoutesData);
-      } catch (error) {
-          console.error('Error parsing second GET response body:', error);
-      }
-
       // Add GET request to /claim/{claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex (hardcoded)
       const claimRoutesIndexUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex`;
       const claimRoutesIndexResponse = await fetch(claimRoutesIndexUrl, {
@@ -187,14 +171,6 @@ export async function handlePlayitApiChain(claimCode: string, serverPort: number
         headers: getHeaders
       });
       console.log('Claim routes index GET response status:', claimRoutesIndexResponse.status);
-
-       // Log the response body of the third GET request
-       try {
-          const claimRoutesIndexData = await claimRoutesIndexResponse.json();
-          console.log('Claim routes index GET response body:', claimRoutesIndexData);
-       } catch (error) {
-          console.error('Error parsing third GET response body:', error);
-      }
 
       // Wait for 1 second before the next attempt
       if (!programApprovedSeen && !visitLinkNeeded && attempts < maxAttempts) {
