@@ -75,7 +75,7 @@ export function ReviewStep({ onComplete }: ReviewStepProps) {
                   <Memory className="h-5 w-5 text-linen" />
                   <div>
                     <h3 className="font-medium text-linen">Memory Allocation</h3>
-                    <p className="text-sm text-cool-gray">{config.ram} GB RAM</p>
+                    <p className="text-sm text-cool-gray">{config.ram} MB RAM</p>
                   </div>
                 </motion.div>
               </div>
