@@ -8,7 +8,7 @@ import { URLSearchParams } from 'url'; // Import URLSearchParams
 let playitProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 
-type StartTunnelResponse = { success: boolean; message: string; data?: { agentId?: string } }; // Updated return type
+type StartTunnelResponse = { success: boolean; message: string; data?: { agentId?: string, tunnelId?: string } }; // Updated return type to allow tunnelId
 
 // Add delay between requests to avoid rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -100,12 +100,14 @@ export function registerPlayitHandlers(window: BrowserWindow) {
   ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event): Promise<StartTunnelResponse> => {
     const maxFullRetries = 5; // Maximum number of full retry attempts
     let fullRetryAttempts = 0;
-    let tunnelSetupSuccess = false;
     let finalMessage = 'Unknown error occurred.';
     let detectedAgentId: string | undefined = undefined; // Variable to store the extracted Agent ID
-    let needsFullRetrySignal = false; // Declare needsFullRetrySignal here
+    let shouldBreakRetryLoop = false; // Controls retry loop exit
+    let programApprovedSeen = false; // Declare outside loop to retain value after loop
+    let resolveAgentIdWait: ((value: string | undefined) => void) | undefined;
+    const waitForAgentIdPromise = new Promise<string | undefined>(resolve => { resolveAgentIdWait = resolve; });
 
-    while (fullRetryAttempts < maxFullRetries && !tunnelSetupSuccess) {
+    while (fullRetryAttempts < maxFullRetries && !shouldBreakRetryLoop) {
       fullRetryAttempts++;
       console.log(`Starting full setup attempt ${fullRetryAttempts}/${maxFullRetries}...`);
 
@@ -116,10 +118,10 @@ export function registerPlayitHandlers(window: BrowserWindow) {
       cleanupPlayitProcess();
       await delay(500); // Give process a moment to terminate cleanly and port to free up
 
-    let binaryPath: string;
-    try {
-      binaryPath = await getPlayitBinaryPath();
-    } catch (error: any) {
+      let binaryPath: string;
+      try {
+        binaryPath = await getPlayitBinaryPath();
+      } catch (error: any) {
         const errorMessage = `Setup Error: ${error.message}`;
         console.error(errorMessage);
         mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
@@ -130,10 +132,9 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 
       // 2. Spawn a new process and attach the single comprehensive stdout listener
       let claimCode: string | undefined = undefined;
-      let programApprovedSeen = false;
+      let claimCodeHandled = false; // Correctly scoped per process
       let visitLinkNeeded = false; // Signal to immediately retry full sequence
       let initialStdoutReceived = false; // Flag to indicate initial messages processed
-      const stdoutTimeout = 30000; // 30 seconds timeout for initial stdout messages
       let pollingActive = false; // Track if we are in the polling phase
 
       // Use a Promise to wait for specific signals from the stdout listener
@@ -141,31 +142,27 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         type: 'claimCode' | 'visitLink' | 'programApproved' | 'agentId';
         value?: string
       } | null>((resolve, reject) => {
-    try {
-      playitProcess = spawn(binaryPath, [], {
-        detached: false,
-        windowsHide: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
-        env: { 
-          ...process.env, 
-          FORCE_COLOR: '0',
-          TERM: 'dumb',
-          CLICOLOR: '0',
-          NO_COLOR: '1'
-        }
-      });
-      
+        try {
+          playitProcess = spawn(binaryPath, [], {
+            detached: false,
+            windowsHide: false,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: false,
+            env: { 
+              ...process.env, 
+              FORCE_COLOR: '0',
+              TERM: 'dumb',
+              CLICOLOR: '0',
+              NO_COLOR: '1'
+            }
+          });
           if (!playitProcess.stdout) {
             reject(new Error('Failed to get stdout from Playit process.'));
             return;
           }
-
-          console.log('New Playit process spawned. Attaching comprehensive stdout listener...');
-
+          // Attach the listener only once per process spawn
           const listener = (data: any) => {
             const chunk = data.toString();
-
             const cleanChunk = chunk
                .replace(/\x1B/g, '')
                .replace(/\[2J/g, '')
@@ -173,144 +170,106 @@ export function registerPlayitHandlers(window: BrowserWindow) {
                .replace(/8/g, '')
                .replace(/no command provided, doing auto run/g, '')
                .trim();
-
+            // Log all cleaned chunks
+            console.log('cleanChunk:', cleanChunk);
             if (cleanChunk) {
               const claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
-              if (claimCodeMatch && claimCodeMatch[1]) {
+              if (claimCodeMatch && claimCodeMatch[1] && !claimCodeHandled) {
+                claimCodeHandled = true; // Set synchronously before any async/resolve
                 claimCode = claimCodeMatch[1];
-                console.log('Claim code found in stdout.', claimCode);
+                console.log('Claim code found in stdout:', claimCode);
                 if (!initialStdoutReceived) {
                     initialStdoutReceived = true;
                     resolve({ type: 'claimCode', value: claimCode });
                 }
+                return;
               }
-              if (cleanChunk.includes("Visit link to setup")) {
-                if (pollingActive) {
-                  visitLinkNeeded = true;
-                }
+              // Only check for 'Visit link to setup' during polling
+              if (pollingActive && cleanChunk.includes("Visit link to setup")) {
+                console.log('[polling] Detected "Visit link to setup" in stdout, triggering retry.');
+                visitLinkNeeded = true;
                 if (!initialStdoutReceived) {
                     initialStdoutReceived = true;
                     resolve({ type: 'visitLink' });
                 }
-              } else if (cleanChunk.includes("Program approved")) {
+                return;
+              }
+              if (cleanChunk.includes("Program approved")) {
                 console.log('"Program approved" detected in stdout.');
                 programApprovedSeen = true;
                 if (!initialStdoutReceived) {
                     initialStdoutReceived = true;
                     resolve({ type: 'programApproved' });
                 }
-              } else {
-                const agentIdMatch = cleanChunk.match(/https:\/\/playit\.gg\/account\/agents\/([a-zA-Z0-9-]+)/);
-                if (agentIdMatch && agentIdMatch[1]) {
-                    detectedAgentId = agentIdMatch[1];
-                    console.log('Extracted Playit Agent ID from stdout:', detectedAgentId);
-                    playitProcess?.stdout?.removeListener('data', listener); // Remove listener after extracting agent ID
-                    if (!initialStdoutReceived) {
-                        initialStdoutReceived = true;
-                        resolve({ type: 'agentId', value: detectedAgentId });
-                    }
+                // Signal to break out of retry loop when we see "Program approved"
+                shouldBreakRetryLoop = true;
+              }
+              const agentIdMatch = cleanChunk.match(/https:\/\/playit\.gg\/account\/agents\/([a-zA-Z0-9-]+)/);
+              if (agentIdMatch && agentIdMatch[1]) {
+                detectedAgentId = agentIdMatch[1];
+                console.log('Extracted Playit Agent ID from stdout:', detectedAgentId);
+                if (!initialStdoutReceived) {
+                  initialStdoutReceived = true;
+                  resolve({ type: 'agentId', value: detectedAgentId });
+                }
+                // Stop listening to stdout once Agent ID is found
+                if (playitProcess && playitProcess.stdout) {
+                  playitProcess.stdout.removeAllListeners('data');
+                }
+                // If program approved was seen, resolve the specific wait promise
+                if (programApprovedSeen && resolveAgentIdWait) {
+                  resolveAgentIdWait(detectedAgentId);
                 }
               }
             }
           };
+          playitProcess.stdout.removeAllListeners('data'); // Extra safety: remove any listeners before attaching
           playitProcess.stdout.on('data', listener);
 
           // Handle process exit/error
           playitProcess.on('close', (code) => {
             console.log(`Playit process closed with code ${code}.`);
-            // Signal failure if process closes before setup is complete
-            if (!tunnelSetupSuccess) {
+            if (!shouldBreakRetryLoop) {
                 reject(new Error(`Playit process closed unexpectedly with code ${code}.`));
             }
           });
-
           playitProcess.on('error', (err) => {
             console.error(`Playit process error: ${err.message}`);
-            // Signal failure on process error
-            if (!tunnelSetupSuccess) {
+            if (!shouldBreakRetryLoop) {
                 reject(new Error(`Playit process error: ${err.message}`));
             }
           });
-
         } catch (spawnError: any) {
           reject(new Error(`Failed to spawn Playit process: ${spawnError.message}`));
         }
       });
 
-      // Wait for initial stdout signal or timeout
-      const initialSignalResult = await Promise.race([
-          stdoutSignalPromise,
-          new Promise<null>(resolve => setTimeout(() => { console.log('Initial stdout wait timed out.'); resolve(null); }, stdoutTimeout))
-      ]);
-
-      if (!initialSignalResult) {
-          finalMessage = 'Timed out waiting for initial stdout signal from Playit agent.';
+      // Wait for claim code, agent ID, or program approved (no timeout)
+      const initialSignalResult = await stdoutSignalPromise;
+      if (!initialSignalResult || initialSignalResult.type !== 'claimCode') {
+          finalMessage = 'Did not receive claim code from Playit agent.';
           console.error(finalMessage);
-          needsFullRetrySignal = true; // Treat timeout as needing full retry
           cleanupPlayitProcess();
           continue; // Go to next full retry attempt
       }
+      claimCode = initialSignalResult.value;
+      console.log('Claim code found in stdout:', claimCode);
 
-      if (initialSignalResult.type === 'visitLink') {
-          finalMessage = 'Detected "Visit link to setup..." early in stdout. Retrying full process.';
-          console.warn(finalMessage);
-          needsFullRetrySignal = true;
-          cleanupPlayitProcess();
-          continue; // Go to next full retry attempt
-      }
-
-      // If we got here, we likely have a claim code or Program Approved/Agent ID appeared early
-      if (initialSignalResult.type === 'claimCode') {
-          claimCode = initialSignalResult.value!;
-          console.log('Proceeding with API chain using claim code:', claimCode);
-                // Send status update that claim code is received
-                mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, {
-                  status: 'link_received',
-                  message: 'Claim code received'
-                });
-          // Send just the claim code
-                mainWindow?.webContents.send(IPC_CHANNELS.CLAIM_LINK, { claimCode });
-
-      } else if (initialSignalResult.type === 'programApproved') {
-          console.log('Program Approved appeared early. Assuming tunnel is ready.');
-          tunnelSetupSuccess = true; // Tunnel is ready based on early signal
-          finalMessage = 'Tunnel connected based on early Program Approved signal.';
-          // The listener will continue running to capture agentId if it appears after
-          // Break the full retry loop
-          break;
-      } else if (initialSignalResult.type === 'agentId') {
-          console.log('Agent ID appeared early. Assuming tunnel is ready.');
-          detectedAgentId = initialSignalResult.value;
-          tunnelSetupSuccess = true; // Tunnel is ready based on early signal
-          finalMessage = 'Tunnel connected based on early Agent ID signal.';
-          // Break the full retry loop
-          break;
-      }
-
-      // 3. Make API Calls (Steps 1-3)
-      console.log('Starting API chain (Steps 1-3)...');
-
+      // 1. Make initial requests to claim the agent (GET claim link, GET login/create, POST guest session)
       try {
-          // Step 1: GET initial claim link (already handled by initial stdout for claim code)
-          // We only need the cookie from the response header here if claimCode was the signal
-          if (initialSignalResult.type === 'claimCode') {
-              const initialClaimUrl = `https://playit.gg/claim/${claimCode}`; // Use the found claimCode
-              const initialClaimResponse = await fetch(initialClaimUrl, { method: 'GET', headers: buildHeaders({ 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,gzip,deflate,br;q=0.9' }) });
-              updateCookies(initialClaimResponse.headers.get('set-cookie'));
-              console.log('Initial claim link response status:', initialClaimResponse.status);
-              // await delay(1000); // Optional: add a small delay if needed
-          }
+          // Step 1: GET initial claim link
+          const initialClaimUrl = `https://playit.gg/claim/${claimCode}`;
+          const initialClaimResponse = await fetch(initialClaimUrl, { method: 'GET', headers: buildHeaders({ 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,gzip,deflate,br;q=0.9' }) });
+          updateCookies(initialClaimResponse.headers.get('set-cookie'));
+          console.log('Initial claim link response status:', initialClaimResponse.status);
 
           // Step 2: GET login/create page
-          console.log('Visiting login/create page...');
           const loginCreateUrl = `https://playit.gg/login/create?redirect=%2Fclaim%2F${claimCode}%3F`;
           const loginCreateResponse = await fetch(loginCreateUrl, { method: 'GET', headers: buildHeaders({ 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,gzip,deflate,br;q=0.9' }) });
           updateCookies(loginCreateResponse.headers.get('set-cookie'));
           console.log('Login/create page response status:', loginCreateResponse.status);
-          // await delay(1000); // Optional: add a small delay if needed
 
           // Step 3: POST guest session initiation
-          console.log('Initiating guest session POST...');
           const guestInitUrl = `https://playit.gg/login/create?redirect=/claim/${claimCode}?&_data=routes/login.create`;
           const guestInitBodyParams = new URLSearchParams({
             'email': '',
@@ -318,7 +277,6 @@ export function registerPlayitHandlers(window: BrowserWindow) {
             'confirm-password': '',
             '_action': 'guest'
           });
-
           const guestInitResponse = await fetch(guestInitUrl, {
             method: 'POST',
             headers: buildHeaders({
@@ -332,7 +290,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
           updateCookies(guestInitResponse.headers.get('set-cookie'));
           console.log('Guest session initiation POST response status:', guestInitResponse.status);
 
-          if (!guestInitResponse.ok && guestInitResponse.status !== 302) { // 302 is a successful redirect here
+          if (!guestInitResponse.ok && guestInitResponse.status !== 203) { // 203 is a successful redirect here
               const errorText = await guestInitResponse.text();
               console.error('Guest session initiation failed:', errorText);
               throw new Error(`Guest session initiation failed: ${guestInitResponse.statusText} - ${errorText}`);
@@ -346,92 +304,136 @@ export function registerPlayitHandlers(window: BrowserWindow) {
           console.error(errorMessage);
           mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
           finalMessage = errorMessage;
-          needsFullRetrySignal = true; // API errors often require a full retry
           cleanupPlayitProcess();
           await delay(5000); // Wait before retrying after API error
           continue; // Go to next full retry attempt
       }
 
-      // 4. Poll using GET requests until Program Approved or Agent ID is seen
+      // 2. Poll using GET requests until Program Approved or Agent ID is seen
       console.log('Starting polling phase (GET requests)...');
       const getHeaders = buildHeaders({'Accept': '*/*'}); // General GET headers with latest cookies
       let pollingAttempts = 0;
       const maxPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds with 1s delay)
-
       pollingActive = true; // Set pollingActive to true before polling starts
-      // Poll until Program Approved or Agent ID is seen via the stdout listener
-      while (!programApprovedSeen && detectedAgentId === undefined && pollingAttempts < maxPollingAttempts && !visitLinkNeeded) {
+      visitLinkNeeded = false;
+      while (!programApprovedSeen && !detectedAgentId && pollingAttempts < maxPollingAttempts && !visitLinkNeeded) {
         pollingAttempts++;
-        // Only log the attempt number, not the state or body
         console.log(`Polling attempt ${pollingAttempts}/${maxPollingAttempts}`);
-
         try {
-              // Only care about status, don't read body
-              const claimGetUrl = `https://playit.gg/claim/${claimCode}?_data=root`;
-              const claimGetResponse = await fetch(claimGetUrl, { method: 'GET', headers: getHeaders });
-              console.log('Claim GET response status:', claimGetResponse.status);
+          const claimGetUrl = `https://playit.gg/claim/${claimCode}?_data=root`;
+          const claimGetResponse = await fetch(claimGetUrl, { method: 'GET', headers: getHeaders });
+          console.log('Claim GET response status:', claimGetResponse.status);
 
-              const claimRoutesUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode`;
-              const claimRoutesResponse = await fetch(claimRoutesUrl, { method: 'GET', headers: getHeaders });
-              console.log('Claim routes GET response status:', claimRoutesResponse.status);
+          const claimRoutesUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode`;
+          const claimRoutesResponse = await fetch(claimRoutesUrl, { method: 'GET', headers: getHeaders });
+          console.log('Claim routes GET response status:', claimRoutesResponse.status);
 
-              const claimRoutesIndexUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex`;
-              const claimRoutesIndexResponse = await fetch(claimRoutesIndexUrl, { method: 'GET', headers: getHeaders });
-              console.log('Claim routes index GET response status:', claimRoutesIndexResponse.status);
-
+          const claimRoutesIndexUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex`;
+          const claimRoutesIndexResponse = await fetch(claimRoutesIndexUrl, { method: 'GET', headers: getHeaders });
+          console.log('Claim routes index GET response status:', claimRoutesIndexResponse.status);
         } catch (pollingError: any) {
-            console.error(`Polling GET request failed on attempt ${pollingAttempts}: ${pollingError.message}`);
+          console.error(`Polling GET request failed on attempt ${pollingAttempts}: ${pollingError.message}`);
         }
-
-        // Wait for 1 second before the next polling attempt
-        if (!programApprovedSeen && detectedAgentId === undefined && pollingAttempts < maxPollingAttempts && !visitLinkNeeded) {
-            await delay(1000);
-              }
-            }
+        await delay(1000);
+      }
       pollingActive = false; // Set pollingActive to false after polling ends
 
-      // 5. Check outcome of polling
-      if (programApprovedSeen || detectedAgentId !== undefined) {
-          console.log('Polling successful. Tunnel is likely connected.');
-          tunnelSetupSuccess = true;
-          finalMessage = 'Tunnel connected!';
-          mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'connected', message: finalMessage });
-          // Break the full retry loop
-          break;
-      } else if (visitLinkNeeded) {
-          console.warn('Polling stopped because "Visit link to setup..." was seen.');
-          finalMessage = 'Detected "Visit link to setup..." during polling. Retrying full process.';
-          needsFullRetrySignal = true;
-          cleanupPlayitProcess();
-          continue; // Go to next full retry attempt
-      } else {
-          console.error('Polling timed out waiting for Program Approved or Agent ID.');
-          finalMessage = 'Timed out waiting for tunnel to connect.';
-           // This attempt failed, continue to next full retry unless max retries reached
-           if (fullRetryAttempts >= maxFullRetries) {
-               break; // Break full retry loop if max attempts reached
-           }
-           cleanupPlayitProcess(); // Clean up process before next full retry
-           await delay(5000); // Wait before next full retry attempt
-           needsFullRetrySignal = true; // Ensure signal is set for retry
-           continue; // Go to next full retry attempt
+      // If we've seen "Program approved", we can proceed to tunnel creation
+      if (programApprovedSeen) {
+        break;
+      }
+
+      // If we haven't seen "Program approved" and we're out of polling attempts, retry
+      if (!programApprovedSeen) {
+        finalMessage = 'Program not approved after polling.';
+        console.error(finalMessage);
+        cleanupPlayitProcess();
+        continue; // Go to next full retry attempt
       }
     }
 
     // --- End of Retry Loop ---
 
-    if (!tunnelSetupSuccess) {
-      console.error('Full tunnel setup failed after multiple attempts.');
-      mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_STATUS, { status: 'error', message: finalMessage });
-      // Ensure process is cleaned up on final failure
-      cleanupPlayitProcess();
-    } else {
-        // If successful, send the agent ID back
-         return { success: true, message: finalMessage, data: { agentId: detectedAgentId } };
+    // If the loop broke because Program Approved was seen, wait briefly for Agent ID if not already found
+    if (programApprovedSeen && !detectedAgentId) {
+      console.log('Program approved seen, waiting indefinitely for Agent ID in stdout...');
+      detectedAgentId = await waitForAgentIdPromise;
     }
 
-    // Return failure if loop completed without success
-    return { success: false, message: finalMessage };
+    // Now that we have an agent ID (or not), attempt tunnel creation or report failure
+    if (!detectedAgentId) {
+      console.error('No agent ID available for tunnel creation after waiting.');
+      return { success: false, message: 'Failed to get agent ID after all retries.' };
+    }
+
+    try {
+      console.log('=== Starting Tunnel Creation Process ===');
+      console.log('Making GET request to agent page with Agent ID:', detectedAgentId);
+      // 1. GET the agent page to establish session/cookies
+      const agentUrl = `https://playit.gg/account/agents/${detectedAgentId}`;
+      console.log('GET Request URL:', agentUrl);
+      const agentGetResp = await fetch(agentUrl, {
+        method: 'GET',
+        headers: buildHeaders({
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,gzip,deflate,br;q=0.9',
+          'Referer': 'https://playit.gg/account',
+        })
+      });
+      updateCookies(agentGetResp.headers.get('set-cookie'));
+      console.log('GET agent page response status:', agentGetResp.status);
+      console.log('GET agent page response headers:', JSON.stringify(Object.fromEntries(agentGetResp.headers.entries()), null, 2));
+
+      // 2. POST to create tunnel (browser-mimic)
+      console.log('\nMaking POST request to create tunnel for Agent ID:', detectedAgentId);
+      const tunnelPostUrl = `https://playit.gg/account/agents/${detectedAgentId}/tunnels/add?index=&_data=routes%2Faccount%2Fagents%2F$agentId%2Ftunnels%2Fadd%2Findex`;
+      console.log('POST Request URL:', tunnelPostUrl);
+      const tunnelPostBody = new URLSearchParams({
+        region: 'global',
+        tunnel_type: 'minecraft-java',
+        enabled: 'on',
+      });
+      console.log('POST Request Body:', tunnelPostBody.toString());
+      const tunnelPostResp = await fetch(tunnelPostUrl, {
+        method: 'POST',
+        headers: buildHeaders({
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'Origin': 'https://playit.gg',
+          'Referer': `https://playit.gg/account/agents/${detectedAgentId}/tunnels/add`,
+          'Accept': '*/*',
+        }),
+        body: tunnelPostBody.toString(),
+        redirect: 'manual', // So we can read the X-Remix-Redirect header
+      });
+      updateCookies(tunnelPostResp.headers.get('set-cookie'));
+      console.log('POST tunnel creation response status:', tunnelPostResp.status);
+      console.log('POST tunnel creation response headers:', JSON.stringify(Object.fromEntries(tunnelPostResp.headers.entries()), null, 2));
+
+      // 3. Extract tunnel ID from X-Remix-Redirect header
+      let tunnelId: string | undefined = undefined;
+      const remixRedirect = tunnelPostResp.headers.get('x-remix-redirect');
+      console.log('\nChecking for tunnel ID in X-Remix-Redirect header:', remixRedirect);
+      if (remixRedirect) {
+        const tunnelIdMatch = remixRedirect.match(/\/account\/tunnels\/([a-f0-9\-]+)/);
+        if (tunnelIdMatch) {
+          tunnelId = tunnelIdMatch[1];
+          console.log('Successfully extracted Tunnel ID:', tunnelId);
+        }
+      }
+      if (tunnelId) {
+        finalMessage += ` Tunnel ID: ${tunnelId}`;
+        console.log('=== Tunnel Creation Process Completed Successfully ===');
+        return { success: true, message: finalMessage, data: { agentId: detectedAgentId, tunnelId } };
+      } else {
+        console.warn('Tunnel ID could not be extracted from X-Remix-Redirect header.');
+        console.log('=== Tunnel Creation Process Completed (No Tunnel ID) ===');
+        return { success: true, message: finalMessage + ' (Tunnel ID not found)', data: { agentId: detectedAgentId } };
+      }
+    } catch (tunnelError: any) {
+      console.error('=== Tunnel Creation Process Failed ===');
+      console.error('Error during tunnel creation POST:', tunnelError);
+      finalMessage += ' (Tunnel creation POST failed)';
+      return { success: true, message: finalMessage, data: { agentId: detectedAgentId } };
+    }
   });
 }
 
@@ -447,7 +449,6 @@ export function cleanupPlayitProcess() {
             playitProcess.stdout.removeAllListeners('data');
         }
         if (playitProcess.stderr) {
-            // Add stderr listener removal back in case it was removed earlier
             playitProcess.stderr.removeAllListeners('data');
         }
         playitProcess.removeAllListeners('close');
