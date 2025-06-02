@@ -42,14 +42,14 @@ const buildHeaders = (additionalHeaders?: Record<string, string>) => ({
 // Headers used for requests after Agent ID is obtained (polling and tunnel setup)
 const buildPostAgentIdHeaders = (additionalHeaders?: Record<string, string>) => ({
   ...buildHeaders({
-    'Accept': '*/*', // As seen in screenshot
-    'Priority': 'u=1, i', // From screenshot
-    'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not-A.Brand";v="99"' , // From screenshot (example values)
-    'Sec-Ch-Ua-Mobile': '?0', // From screenshot
-    'Sec-Ch-Ua-Platform': '"Windows"', // From screenshot
-    'Sec-Fetch-Dest': 'empty', // From screenshot
-    'Sec-Fetch-Mode': 'cors', // From screenshot
-    'Sec-Fetch-Site': 'same-origin', // From screenshot
+    'Accept': '*/*',
+    'Priority': 'u=1, i',
+    'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'empty', 
+    'Sec-Fetch-Mode': 'cors', 
+    'Sec-Fetch-Site': 'same-origin', 
   }),
   // Include any additional headers specific to a request (overrides or additions)
   ...(additionalHeaders || {})
@@ -119,9 +119,6 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     let finalMessage = 'Unknown error occurred.';
     let detectedAgentId: string | undefined = undefined; // Variable to store the extracted Agent ID
     let shouldBreakRetryLoop = false; // Controls retry loop exit
-    let programApprovedSeen = false; // Declare outside loop to retain value after loop
-    let resolveAgentIdWait: ((value: string | undefined) => void) | undefined;
-    const waitForAgentIdPromise = new Promise<string | undefined>(resolve => { resolveAgentIdWait = resolve; });
 
     while (fullRetryAttempts < maxFullRetries && !shouldBreakRetryLoop) {
       fullRetryAttempts++;
@@ -159,130 +156,106 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         break;
       }
 
-      // 2. Spawn a new process and attach the single comprehensive stdout listener
+      // 2. Spawn a new process
       let claimCode: string | undefined = undefined;
       let claimCodeHandled = false; // Correctly scoped per process
       let visitLinkNeeded = false; // Signal to immediately retry full sequence
-      let initialStdoutReceived = false; // Flag to indicate initial messages processed
-      let pollingActive = false; // Track if we are in the polling phase
 
-      // Use a Promise to wait for specific signals from the stdout listener
-      const stdoutSignalPromise = new Promise<{
-        type: 'claimCode' | 'visitLink' | 'programApproved' | 'agentId';
-        value?: string
-      } | null>((resolve, reject) => {
-    try {
-      playitProcess = spawn(binaryPath, [], {
-        detached: false,
-        windowsHide: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
-        env: { 
-          ...process.env, 
-          FORCE_COLOR: '0',
-          TERM: 'dumb',
-          CLICOLOR: '0',
-          NO_COLOR: '1'
-        }
-      });
-          if (!playitProcess.stdout) {
-            reject(new Error('Failed to get stdout from Playit process.'));
-            return;
+      let claimSignalPromise: Promise<{ type: 'claimCode' | 'visitLink'; value?: string }>;
+
+      try {
+        playitProcess = spawn(binaryPath, [], {
+          detached: false,
+          windowsHide: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: false,
+          env: { 
+            ...process.env, 
+            FORCE_COLOR: '0',
+            TERM: 'dumb',
+            CLICOLOR: '0',
+            NO_COLOR: '1'
           }
-          // Attach the listener only once per process spawn
+        });
+
+        // Check if process and stdout are valid before setting up listeners and promise
+        if (!playitProcess || !playitProcess.stdout) {
+           throw new Error('Failed to spawn Playit process or get stdout.');
+        }
+
+        // Use a Promise to wait only for the claim code or visit link from the stdout listener
+        claimSignalPromise = new Promise<{
+          type: 'claimCode' | 'visitLink';
+          value?: string
+        }>((resolve, reject) => {
           const listener = (data: any) => {
-          const chunk = data.toString();
-          const cleanChunk = chunk
-            .replace(/\x1B/g, '')
-            .replace(/\[2J/g, '')
-            .replace(/\[0m/g, '')
-            .replace(/8/g, '')
-            .replace(/no command provided, doing auto run/g, '')
-            .trim();
+            const chunk = data.toString();
+            const cleanChunk = chunk
+               .replace(/\x1B/g, '')
+               .replace(/\[2J/g, '')
+               .replace(/\[0m/g, '')
+               .replace(/8/g, '')
+               .replace(/no command provided, doing auto run/g, '')
+               .trim();
             // Log all cleaned chunks
             console.log('cleanChunk:', cleanChunk);
-          if (cleanChunk) {
-            const claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
+            if (cleanChunk) {
+              const claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
               if (claimCodeMatch && claimCodeMatch[1] && !claimCodeHandled) {
                 claimCodeHandled = true; // Set synchronously before any async/resolve
                 claimCode = claimCodeMatch[1];
                 console.log('Claim code found in stdout:', claimCode);
-                if (!initialStdoutReceived) {
-                  initialStdoutReceived = true;
-                  resolve({ type: 'claimCode', value: claimCode });
-                }
+                resolve({ type: 'claimCode', value: claimCode });
                 return;
               }
-              // Only check for 'Visit link to setup' during polling
-              if (pollingActive && cleanChunk.includes("Visit link to setup")) {
+              // Check for 'Visit link to setup' after claim code is seen (This signal triggers a full retry)
+              if (cleanChunk.includes("Visit link to setup")) {
                 console.log('[polling] Detected "Visit link to setup" in stdout, triggering retry.');
                 visitLinkNeeded = true;
-                if (!initialStdoutReceived) {
-                  initialStdoutReceived = true;
-                  resolve({ type: 'visitLink' });
-                }
+                resolve({ type: 'visitLink' });
                 return;
-              }
-              if (cleanChunk.includes("Program approved")) {
-                console.log('"Program approved" detected in stdout.');
-                programApprovedSeen = true;
-                if (!initialStdoutReceived) {
-                  initialStdoutReceived = true;
-                  resolve({ type: 'programApproved' });
-                }
-                // Signal to break out of retry loop when we see "Program approved"
-                shouldBreakRetryLoop = true;
-              }
-              const agentIdMatch = cleanChunk.match(/https:\/\/playit\.gg\/account\/agents\/([a-zA-Z0-9-]+)/);
-              if (agentIdMatch && agentIdMatch[1]) {
-                detectedAgentId = agentIdMatch[1];
-                console.log('Extracted Playit Agent ID from stdout:', detectedAgentId);
-                if (!initialStdoutReceived) {
-                  initialStdoutReceived = true;
-                  resolve({ type: 'agentId', value: detectedAgentId });
-                }
-                // Stop listening to stdout once Agent ID is found
-                if (playitProcess && playitProcess.stdout) {
-                  playitProcess.stdout.removeAllListeners('data');
-                }
-                // If program approved was seen, resolve the specific wait promise
-                if (programApprovedSeen && resolveAgentIdWait) {
-                  resolveAgentIdWait(detectedAgentId);
-                }
               }
             }
           };
-          playitProcess.stdout.removeAllListeners('data'); // Extra safety: remove any listeners before attaching
-          playitProcess.stdout.on('data', listener);
+          playitProcess?.stdout?.removeAllListeners('data');
+          playitProcess?.stdout?.on('data', listener);
 
-          // Handle process exit/error
-          playitProcess.on('close', (code) => {
+          // Handle process exit/error - should reject the promise if it happens before claimCode/visitLink is found
+          playitProcess?.on('close', (code) => {
             console.log(`Playit process closed with code ${code}.`);
-            if (!shouldBreakRetryLoop) {
-              reject(new Error(`Playit process closed unexpectedly with code ${code}.`));
+            // If the process closes before we get a signal, it's an error
+            if (!claimCode && !visitLinkNeeded) {
+                reject(new Error(`Playit process closed unexpectedly with code ${code}.`));
             }
           });
-          playitProcess.on('error', (err) => {
+          playitProcess?.on('error', (err) => {
             console.error(`Playit process error: ${err.message}`);
-            if (!shouldBreakRetryLoop) {
-              reject(new Error(`Playit process error: ${err.message}`));
-            }
+             if (!claimCode && !visitLinkNeeded) {
+                reject(new Error(`Playit process error: ${err.message}`));
+             }
           });
-        } catch (spawnError: any) {
-          reject(new Error(`Failed to spawn Playit process: ${spawnError.message}`));
-        }
-      });
+        }); // End of claimSignalPromise
 
-      // Wait for claim code, agent ID, or program approved (no timeout)
-      const initialSignalResult = await stdoutSignalPromise;
-      if (!initialSignalResult || initialSignalResult.type !== 'claimCode') {
-        finalMessage = 'Did not receive claim code from Playit agent.';
-        console.error(finalMessage);
+
+      } catch (spawnError: any) {
+        console.error(`Error spawning Playit process: ${spawnError.message}`);
+        finalMessage = `Setup Error: ${spawnError.message}`;
         cleanupPlayitProcess();
+        await delay(1000); // Wait before retrying after spawn error
         continue; // Go to next full retry attempt
       }
-      claimCode = initialSignalResult.value;
-      console.log('Claim code found in stdout:', claimCode);
+
+       // Wait for claim code or visit link from stdout (no timeout)
+       const initialSignalResult = await claimSignalPromise;
+       if (!initialSignalResult || initialSignalResult.type !== 'claimCode') {
+           finalMessage = 'Did not receive claim code from Playit agent.';
+           console.error(finalMessage);
+           cleanupPlayitProcess();
+           await delay(5000); // Wait before retrying after API error
+           continue; // Go to next full retry attempt
+       }
+       claimCode = initialSignalResult.value;
+       console.log('Claim code found in stdout:', claimCode);
 
       // 1. Make initial requests to claim the agent (GET claim link, GET login/create, POST guest session)
       try {
@@ -338,14 +311,13 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         continue; // Go to next full retry attempt
       }
 
-      // 2. Poll using GET requests until Program Approved or Agent ID is seen
-      console.log('Starting polling phase (GET requests)...');
+      // 2. Poll using GET requests until claim is approved (status 204 with redirect)
+      console.log('Starting claim polling phase (GET requests)...');
       const getHeaders = buildHeaders({'Accept': '*/*'}); // General GET headers with latest cookies
       let pollingAttempts = 0;
       const maxPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds with 1s delay)
-      pollingActive = true; // Set pollingActive to true before polling starts
-      visitLinkNeeded = false;
-      while (!programApprovedSeen && !detectedAgentId && pollingAttempts < maxPollingAttempts && !visitLinkNeeded) {
+      let claimPollingSuccess = false;
+      while (pollingAttempts < maxPollingAttempts && !visitLinkNeeded && !claimPollingSuccess) {
         pollingAttempts++;
         console.log(`Polling attempt ${pollingAttempts}/${maxPollingAttempts}`);
         try {
@@ -359,49 +331,58 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 
           const claimRoutesIndexUrl = `https://playit.gg/claim/${claimCode}?_data=routes%2Fclaim%2F%24claimCode%2Findex`;
           const claimRoutesIndexResponse = await fetch(claimRoutesIndexUrl, { method: 'GET', headers: getHeaders });
+          updateCookies(claimRoutesIndexResponse.headers.get('set-cookie')); // Update cookies after the last request
           console.log('Claim routes index GET response status:', claimRoutesIndexResponse.status);
+
+          // Check for 204 status and X-Remix-Redirect header in the last response
+          const remixRedirect = claimRoutesIndexResponse.headers.get('x-remix-redirect');
+          if (claimRoutesIndexResponse.status === 204 && remixRedirect) {
+            const agentIdMatch = remixRedirect.match(/\/setup\/connect\/([a-zA-Z0-9-]+)/);
+            if (agentIdMatch && agentIdMatch[1]) {
+              detectedAgentId = agentIdMatch[1];
+              console.log('Claim polling successful. Extracted Agent ID from redirect header:', detectedAgentId);
+              claimPollingSuccess = true;
+              // Turn off stdout listener and other process listeners after getting Agent ID from HTTP
+              playitProcess?.stdout?.removeAllListeners('data');
+              // Remove close and error listeners as well
+              playitProcess?.removeAllListeners('close');
+              playitProcess?.removeAllListeners('error');
+              break; // Exit polling loop
+            }
+          }
+
         } catch (pollingError: any) {
           console.error(`Polling GET request failed on attempt ${pollingAttempts}: ${pollingError.message}`);
         }
-        await delay(1000);
-      }
-      pollingActive = false; // Set pollingActive to false after polling ends
-
-      // If we've seen "Program approved", we can proceed to tunnel creation
-      if (programApprovedSeen) {
-        break;
+        await delay(3000); // Delay before next polling attempt
       }
 
-      // If we haven't seen "Program approved" and we're out of polling attempts, retry
-      if (!programApprovedSeen) {
-        finalMessage = 'Program not approved after polling.';
-        console.error(finalMessage);
+      // After polling, check if Agent ID was successfully obtained
+      if (!detectedAgentId) {
+        const errorMessage = 'Failed to obtain Agent ID after claim polling.';
+        console.error(errorMessage);
+        finalMessage = errorMessage;
         cleanupPlayitProcess();
+        await delay(5000); // Wait before retrying after polling failure
         continue; // Go to next full retry attempt
       }
+
+      // If Agent ID was obtained, break the full retry loop
+      shouldBreakRetryLoop = true;
+      break; // Exit the full retry loop
     }
 
     // --- End of Retry Loop ---
 
-    // If the loop broke because Program Approved was seen, wait briefly for Agent ID if not already found
-    if (programApprovedSeen && !detectedAgentId) {
-      console.log('Program approved seen, waiting indefinitely for Agent ID in stdout...');
-      detectedAgentId = await waitForAgentIdPromise;
-    }
-
-    // Now that we have an agent ID (or not), attempt tunnel creation or report failure
+    // Now that we have an agent ID, attempt tunnel creation
     if (!detectedAgentId) {
-      console.error('No agent ID available for tunnel creation after waiting.');
+      console.error('No agent ID available for tunnel creation.');
       return { success: false, message: 'Failed to get agent ID after all retries.' };
     }
 
     try {
       console.log('=== Starting Tunnel Creation Process ===');
       console.log('Using Agent ID for tunnel creation:', detectedAgentId);
-
-      // Wait for 10 seconds before starting polling, as requested
-      console.log('Waiting 10 seconds before starting connection readiness polling...');
-      await delay(10000);
 
       // Implement the new sequence of GET requests based on network analysis
       // 1. Polling Loop: Repeatedly fetch connect URLs until ready
@@ -417,7 +398,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
           const connectRootResp = await fetch(connectRootUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
             'Referer': `https://playit.gg/setup/connect/${detectedAgentId}`
           }) });
-          //updateCookies(connectRootResp.headers.get('set-cookie'));
+          updateCookies(connectRootResp.headers.get('set-cookie'));
           console.log('Connect root GET response status:', connectRootResp.status);
         } catch (error) {
           console.error(`Connect root GET failed: ${error}`);
@@ -428,7 +409,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
           const connectRouteResp = await fetch(connectRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
             'Referer': `https://playit.gg/setup/connect/${detectedAgentId}`
           }) });
-          //updateCookies(connectRouteResp.headers.get('set-cookie'));
+          updateCookies(connectRouteResp.headers.get('set-cookie'));
           console.log('Connect route GET response status:', connectRouteResp.status);
 
           // Check for 204 status or X-Remix-Redirect header
@@ -442,7 +423,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
           console.error(`Connect route GET failed: ${error}`);
         }
 
-        await delay(1000); // Delay before next polling attempt
+        await delay(3000); // Delay before next polling attempt
       }
 
       if (!connectPollingSuccess) {
