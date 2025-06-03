@@ -119,9 +119,9 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     let finalMessage = 'Unknown error occurred.';
     let detectedAgentId: string | undefined = undefined; // Variable to store the extracted Agent ID
     let shouldBreakRetryLoop = false; // Controls retry loop exit
-    let shouldFullRetry = false; // Controls whether the full setup sequence should retry
+    let triggerFullRetryFromPolling = false; // Flag to signal a full retry is needed after polling
 
-    while (fullRetryAttempts < maxFullRetries && !shouldBreakRetryLoop && !shouldFullRetry) {
+    while (fullRetryAttempts < maxFullRetries && !shouldBreakRetryLoop) {
       fullRetryAttempts++;
       console.log(`Starting full setup attempt ${fullRetryAttempts}/${maxFullRetries}...`);
 
@@ -188,6 +188,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         claimSignalPromise = new Promise<{ type: 'claimCode' | 'visitLink' | 'existingAgent'; value?: string }>((resolve, reject) => {
           let claimCodeMatch: RegExpMatchArray | null = null; // Declare outside listener
           let loginLinkMatch: RegExpMatchArray | null = null; // Declare outside listener
+          let visitLinkDetectedInitially = false; // Flag to track initial visit link detection
 
           const listener = (data: any) => {
             const chunk = data.toString();
@@ -208,17 +209,6 @@ export function registerPlayitHandlers(window: BrowserWindow) {
                 claimCode = claimCodeMatch[1];
                 console.log('Claim code found in stdout:', claimCode);
                 resolve({ type: 'claimCode', value: claimCode });
-                return;
-              }
-
-              // New Agent Flow: Detect 'Visit link to setup' signal (triggers retry if no claim code yet)
-              if (cleanChunk.includes("Visit link to setup") && !claimCodeHandled) {
-                console.log('[polling] Detected "Visit link to setup" in stdout, triggering retry.');
-                visitLinkNeeded = true;
-                // Resolve as visitLink to potentially trigger a retry, but we need a better way
-                // to signal 'new agent flow started but no claim code yet'. For now, keep existing.
-                resolve({ type: 'visitLink' });
-                shouldFullRetry = true; // Signal to the outer loop to retry
                 return;
               }
 
@@ -248,14 +238,14 @@ export function registerPlayitHandlers(window: BrowserWindow) {
             console.log(`Playit process closed with code ${code}.`);
             // If the process closes before we get a signal, it's an error
             // Only reject if no signal indicating either flow has been received
-            if (!claimCodeMatch && !visitLinkNeeded && !loginLinkMatch) { // Use declared variables
+            if (!claimCodeMatch && !loginLinkMatch && !visitLinkDetectedInitially) { // Use declared variables
                 reject(new Error(`Playit process closed unexpectedly with code ${code}.`));
             }
           });
           playitProcess?.on('error', (err) => {
             console.error(`Playit process error: ${err.message}`);
              // Only reject if no signal indicating either flow has been received
-             if (!claimCodeMatch && !visitLinkNeeded && !loginLinkMatch) { // Use declared variables
+             if (!claimCodeMatch && !loginLinkMatch && !visitLinkDetectedInitially) { // Use declared variables
                 reject(new Error(`Playit process error: ${err.message}`));
              }
           });
@@ -269,20 +259,81 @@ export function registerPlayitHandlers(window: BrowserWindow) {
      // Ensure claimSignalPromise is not null before awaiting
      const initialSignalResult = await (claimSignalPromise || Promise.reject(new Error("claimSignalPromise was not initialized.")));
 
-     // Check if a full retry is needed based on the signal result
-     if (shouldFullRetry) {
-         console.log('Visit link detected, retrying full setup sequence.');
-         cleanupPlayitProcess(); // Clean up the current process before retrying
-         await delay(1000); // Short delay before next retry attempt
-         continue; // Go to the next full retry attempt
-     }
-
      if (initialSignalResult && initialSignalResult.type === 'existingAgent') {
          // --- Existing Agent Flow ---
          console.log('Existing agent detected. Login link:', initialSignalResult.value);
-         // For now, we just log the link and return success with the link in data
-         finalMessage = 'Existing agent detected. Please use the provided login link.';
-         return { success: true, message: finalMessage, data: { loginLink: initialSignalResult.value } };
+
+         // Make a basic GET request with the login link
+         console.log('Making GET request with login link...');
+         try {
+             const loginLinkResp = await fetch(initialSignalResult.value as string, { method: 'GET'});
+             updateCookies(loginLinkResp.headers.get('set-cookie'));
+             console.log('Login link GET response status:', loginLinkResp.status);
+             // We don't necessarily need to check the response body here, just ensure the request is made and cookies are updated
+         } catch (error) {
+             console.error(`GET request with login link failed: ${error}`);
+             // Decide if this failure should stop the process. For now, log and continue.
+         }
+
+         finalMessage = 'Existing agent detected. Using provided login link.';
+
+         await delay(1000);
+
+         // Make GET request to get agent details (no inner retry loop here)
+         console.log('Fetching agent details...');
+         const agentDetailsUrl = 'https://playit.gg/account/agents?_data=routes%2Faccount';
+         let agentDetailsJson: any = null;
+         let extractedAgentId: string | undefined = undefined;
+         let agentDetailsFetchSuccess = false;
+
+         try {
+           const agentDetailsResp = await fetch(agentDetailsUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
+             'Referer': 'https://playit.gg/login/guest-'
+           }) });
+           updateCookies(agentDetailsResp.headers.get('set-cookie'));
+           console.log('Agent details GET response status:', agentDetailsResp.status);
+           if (agentDetailsResp.ok) {
+             agentDetailsFetchSuccess = true;
+             try {
+               agentDetailsJson = await agentDetailsResp.json();
+               console.log('Agent details response body sample:', JSON.stringify(agentDetailsJson, null, 2).substring(0, 500) + '...');
+             } catch (jsonError) {
+               console.error('Failed to parse agent details response JSON:', jsonError);
+             }
+           }
+         } catch (error) {
+           console.error(`Agent details GET failed: ${error}`);
+         }
+
+         // Attempt to extract agent ID from the JSON response if fetch was successful and JSON parsed
+         if (agentDetailsFetchSuccess && agentDetailsJson) {
+           try {
+             // Correct path is agentDetailsJson.agents.agents[0].id
+             if (agentDetailsJson.agents && Array.isArray(agentDetailsJson.agents.agents) && agentDetailsJson.agents.agents.length > 0) {
+               extractedAgentId = agentDetailsJson.agents.agents[0].id;
+               console.log('Successfully extracted Agent ID:', extractedAgentId);
+               // Turn off stdout listener after getting Agent ID in existing agent flow
+               playitProcess?.stdout?.removeAllListeners('data');
+             } else {
+               console.warn('Agent ID not found in the expected location in the response.');
+             }
+           } catch (error) {
+              console.error(`Error extracting Agent ID from JSON: ${error}`);
+           }
+         }
+
+         // Check if Agent ID was successfully obtained. If not, trigger a full retry.
+         if (extractedAgentId) {
+             finalMessage += ` Agent ID: ${extractedAgentId}`;
+             console.log('=== Existing Agent Flow Completed Successfully ===');
+             return { success: true, message: finalMessage, data: { agentId: extractedAgentId, loginLink: initialSignalResult.value } };
+         } else {
+             console.warn('Agent ID not obtained in existing agent flow after initial attempt. Triggering full retry.');
+             // Clean up current process and continue to the next full retry attempt
+             cleanupPlayitProcess();
+             await delay(1000); // Short delay before next retry attempt
+             continue; // Go to the next full retry attempt in the main while loop
+         }
 
      } else if (!initialSignalResult || initialSignalResult.type !== 'claimCode') {
          // --- Handle cases where claim code is not received (original flow error handling) ---
@@ -356,7 +407,32 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     let pollingAttempts = 0;
     const maxPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds with 1s delay)
     let claimPollingSuccess = false;
-    while (pollingAttempts < maxPollingAttempts && !visitLinkNeeded && !claimPollingSuccess) {
+    let triggerFullRetryFromPolling = false; // Flag to signal a full retry is needed after polling
+
+    // Add a listener specifically for stdout messages during the polling phase
+    const pollingListener = (data: any) => {
+        const chunk = data.toString();
+        const cleanChunk = chunk
+           .replace(/\x1B/g, '')
+           .replace(/\[2J/g, '')
+           .replace(/\[0m/g, '')
+           .replace(/8/g, '')
+           .replace(/no command provided, doing auto run/g, '')
+           .trim();
+        console.log('Polling cleanChunk:', cleanChunk); // Log polling chunks
+
+        if (cleanChunk.includes("Visit link to setup")) {
+            console.log('[Polling Listener] Detected "Visit link to setup", triggering full retry.');
+            triggerFullRetryFromPolling = true; // Set the flag
+        }
+    };
+
+    // Ensure playitProcess and its stdout are valid before adding listener
+    if (playitProcess?.stdout) {
+        playitProcess.stdout.on('data', pollingListener);
+    }
+
+    while (pollingAttempts < maxPollingAttempts && !visitLinkNeeded && !claimPollingSuccess && !triggerFullRetryFromPolling) {
       pollingAttempts++;
       console.log(`Polling attempt ${pollingAttempts}/${maxPollingAttempts}`);
       try {
@@ -396,8 +472,13 @@ export function registerPlayitHandlers(window: BrowserWindow) {
       await delay(3000); // Delay before next polling attempt
     }
 
-    // After polling, check if Agent ID was successfully obtained
-    if (!detectedAgentId) {
+    // After polling, check if a full retry is needed or if Agent ID was obtained
+    if (triggerFullRetryFromPolling) {
+        console.log('Full retry triggered from polling.');
+        cleanupPlayitProcess(); // Clean up the current process before retrying
+        await delay(1000); // Short delay before next retry attempt
+        continue; // Go to the next full retry attempt
+    } else if (!detectedAgentId) {
       const errorMessage = 'Failed to obtain Agent ID after claim polling.';
       console.error(errorMessage);
       finalMessage = errorMessage;
