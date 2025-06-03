@@ -119,7 +119,6 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     let finalMessage = 'Unknown error occurred.';
     let detectedAgentId: string | undefined = undefined; // Variable to store the extracted Agent ID
     let shouldBreakRetryLoop = false; // Controls retry loop exit
-    let triggerFullRetryFromPolling = false; // Flag to signal a full retry is needed after polling
 
     while (fullRetryAttempts < maxFullRetries && !shouldBreakRetryLoop) {
       fullRetryAttempts++;
@@ -423,7 +422,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     let pollingAttempts = 0;
     const maxPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds with 1s delay)
     let claimPollingSuccess = false;
-    let triggerFullRetryFromPolling = false; // Flag to signal a full retry is needed after polling
+    let shouldExitPolling = false; // Flag to control polling loop exit
 
     // Add a listener specifically for stdout messages during the polling phase
     const pollingListener = (data: any) => {
@@ -439,7 +438,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 
         if (cleanChunk.includes("Visit link to setup")) {
             console.log('[Polling Listener] Detected "Visit link to setup", triggering full retry.');
-            triggerFullRetryFromPolling = true; // Set the flag
+            shouldExitPolling = true; // Set flag instead of breaking
         }
     };
 
@@ -448,7 +447,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         playitProcess.stdout.on('data', pollingListener);
     }
 
-    while (pollingAttempts < maxPollingAttempts && !visitLinkNeeded && !claimPollingSuccess && !triggerFullRetryFromPolling) {
+    while (pollingAttempts < maxPollingAttempts && !visitLinkNeeded && !claimPollingSuccess && !shouldExitPolling) {
       pollingAttempts++;
       console.log(`Polling attempt ${pollingAttempts}/${maxPollingAttempts}`);
       try {
@@ -489,12 +488,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     }
 
     // After polling, check if a full retry is needed or if Agent ID was obtained
-    if (triggerFullRetryFromPolling) {
-        console.log('Full retry triggered from polling.');
-        cleanupPlayitProcess(); // Clean up the current process before retrying
-        await delay(1000); // Short delay before next retry attempt
-        continue; // Go to the next full retry attempt
-    } else if (!detectedAgentId) {
+    if (!detectedAgentId) {
       const errorMessage = 'Failed to obtain Agent ID after claim polling.';
       console.error(errorMessage);
       finalMessage = errorMessage;
