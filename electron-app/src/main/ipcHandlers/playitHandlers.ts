@@ -277,7 +277,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 
          finalMessage = 'Existing agent detected. Using provided login link.';
 
-         await delay(1000);
+         await delay(2000);
 
          // Make GET request to get agent details (no inner retry loop here)
          console.log('Fetching agent details...');
