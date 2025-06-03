@@ -114,7 +114,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
   mainWindow = window;
 
   ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event): Promise<StartTunnelResponse> => {
-    const maxFullRetries = 5; // Maximum number of full retry attempts
+    const maxFullRetries = 7; // Maximum number of full retry attempts
     let fullRetryAttempts = 0;
     let finalMessage = 'Unknown error occurred.';
     let detectedAgentId: string | undefined = undefined; // Variable to store the extracted Agent ID
@@ -276,8 +276,6 @@ export function registerPlayitHandlers(window: BrowserWindow) {
          }
 
          finalMessage = 'Existing agent detected. Using provided login link.';
-
-         await delay(2000);
 
          // Make GET request to get agent details (no inner retry loop here)
          console.log('Fetching agent details...');
