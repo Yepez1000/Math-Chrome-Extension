@@ -324,9 +324,27 @@ export function registerPlayitHandlers(window: BrowserWindow) {
 
          // Check if Agent ID was successfully obtained. If not, trigger a full retry.
          if (extractedAgentId) {
-             finalMessage += ` Agent ID: ${extractedAgentId}`;
-             console.log('=== Existing Agent Flow Completed Successfully ===');
-             return { success: true, message: finalMessage, data: { agentId: extractedAgentId, loginLink: initialSignalResult.value } };
+             // Make GET request to /account/agents/:agentId?_data=routes%2Faccount%2Fagents%2F%24agentId%2Findex
+             console.log(`Fetching agent index data for Agent ID: ${extractedAgentId}...`);
+             const agentIndexUrl = `https://playit.gg/account/agents/${extractedAgentId}?_data=routes%2Faccount%2Fagents%2F%24agentId%2Findex`;
+             try {
+               const agentIndexResp = await fetch(agentIndexUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
+                 'Referer': 'https://playit.gg/account/agents'
+               }) });
+               updateCookies(agentIndexResp.headers.get('set-cookie'));
+               console.log('Agent index GET response status:', agentIndexResp.status);
+               // We don't necessarily need the response body for this step, just making the request and updating cookies
+             } catch (error) {
+               console.error(`Agent index GET failed: ${error}`);
+               // Decide if this failure should stop the process. For now, log and continue with success.
+             }
+
+             // Now that we have the agent ID and have made the index request, create and poll for the tunnel
+             console.log('Calling createAndPollForTunnelDetails for existing agent...');
+             const tunnelResult = await createAndPollForTunnelDetails(extractedAgentId);
+
+             // Return the result from the tunnel creation and polling process
+             return tunnelResult;
          } else {
              console.warn('Agent ID not obtained in existing agent flow after initial attempt. Triggering full retry.');
              // Clean up current process and continue to the next full retry attempt
@@ -500,228 +518,11 @@ export function registerPlayitHandlers(window: BrowserWindow) {
     return { success: false, message: 'Failed to get agent ID after all retries.' };
   }
 
-  try {
-    console.log('=== Starting Tunnel Creation Process ===');
-    console.log('Using Agent ID for tunnel creation:', detectedAgentId);
+  // Call the refactored function to create and poll for tunnel details
+  const tunnelResult = await createAndPollForTunnelDetails(detectedAgentId);
 
-    // Implement the new sequence of GET requests based on network analysis
-    // 1. Polling Loop: Repeatedly fetch connect URLs until ready
-    console.log('Starting polling for agent connection readiness...');
-    let connectPollingSuccess = false;
-    const maxConnectPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds)
-    for (let i = 0; i < maxConnectPollingAttempts; i++) {
-      console.log(`Connect polling attempt ${i + 1}/${maxConnectPollingAttempts}`);
-
-      // First GET to /setup/connect/:agentId?_data=root
-      const connectRootUrl = `https://playit.gg/setup/connect/${detectedAgentId}?_data=root`;
-      try {
-        const connectRootResp = await fetch(connectRootUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-          'Referer': `https://playit.gg/setup/connect/${detectedAgentId}`
-        }) });
-        updateCookies(connectRootResp.headers.get('set-cookie'));
-        console.log('Connect root GET response status:', connectRootResp.status);
-      } catch (error) {
-        console.error(`Connect root GET failed: ${error}`);
-      }
-      // Second GET to /setup/connect/:agentId?_data=routes%2Fsetup%2Fconnect.%24agentId
-      const connectRouteUrl = `https://playit.gg/setup/connect/${detectedAgentId}?_data=routes%2Fsetup%2Fconnect.%24agentId`;
-      try {
-        const connectRouteResp = await fetch(connectRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-          'Referer': `https://playit.gg/setup/connect/${detectedAgentId}`
-        }) });
-        updateCookies(connectRouteResp.headers.get('set-cookie'));
-        console.log('Connect route GET response status:', connectRouteResp.status);
-
-        // Check for 204 status or X-Remix-Redirect header
-        if (connectRouteResp.status === 204 || connectRouteResp.headers.has('x-remix-redirect')) {
-          console.log('Connect polling successful!');
-          connectPollingSuccess = true;
-          break; // Exit polling loop
-        }
-
-      } catch (error) {
-        console.error(`Connect route GET failed: ${error}`);
-      }
-
-      await delay(3000); // Delay before next polling attempt
-    }
-
-    if (!connectPollingSuccess) {
-      const errorMessage = 'Failed to poll for agent connection readiness.';
-      console.error(errorMessage);
-      // Decide if this should trigger a full retry or just report failure
-      // For now, let's just report failure.
-      return { success: false, message: errorMessage };
-    }
-
-    console.log('Agent connection readiness confirmed.');
-
-    // 2. Tunnel Setup Requests: Fetch tunnel URLs once
-    console.log('Fetching tunnel setup data...');
-
-    // First GET to /setup/tunnel/:agentId?_data=root
-    const tunnelRootUrl = `https://playit.gg/setup/tunnel/${detectedAgentId}?_data=root`;
-    try {
-      const tunnelRootResp = await fetch(tunnelRootUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-        'Referer': `https://playit.gg/setup/connect/${detectedAgentId}`
-      }) });
-      updateCookies(tunnelRootResp.headers.get('set-cookie'));
-      console.log('Tunnel root GET response status:', tunnelRootResp.status);
-    } catch (error) {
-      console.error(`Tunnel root GET failed: ${error}`);
-    }
-
-    // Second GET to /setup/tunnel/:agentId?_data=routes%2Fsetup%2Ftunnel.%24agentId
-    const tunnelRouteUrl = `https://playit.gg/setup/tunnel/${detectedAgentId}?_data=routes%2Fsetup%2Ftunnel.%24agentId`;
-    try {
-      const tunnelRouteResp = await fetch(tunnelRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-        'Referer': `https://playit.gg/setup/tunnel/${detectedAgentId}`
-      }) });
-      updateCookies(tunnelRouteResp.headers.get('set-cookie'));
-      console.log('Tunnel route GET response status:', tunnelRouteResp.status);
-    } catch (error) {
-      console.error(`Tunnel route GET failed: ${error}`);
-    }
-
-    // 3. POST to create tunnel (browser-mimic)
-    console.log('\nMaking POST request to create tunnel for Agent ID:', detectedAgentId);
-    const tunnelPostUrl = `https://playit.gg/account/agents/${detectedAgentId}/tunnels/add?index=&_data=routes%2Faccount%2Fagents%2F%24agentId%2Ftunnels%2Fadd%2Findex`;
-    console.log('POST Request URL:', tunnelPostUrl);
-    const tunnelPostBody = new URLSearchParams({
-      region: 'global',
-      tunnel_type: 'minecraft-java',
-      enabled: 'on',
-    });
-    console.log('POST Request Body:', tunnelPostBody.toString());
-    const tunnelPostResp = await fetch(tunnelPostUrl, {
-      method: 'POST',
-      headers: buildHeaders({
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'Origin': 'https://playit.gg',
-        'Referer': `https://playit.gg/account/agents/${detectedAgentId}/tunnels/add`,
-        'Accept': '*/*',
-      }),
-      body: tunnelPostBody.toString(),
-      redirect: 'manual', // So we can read the X-Remix-Redirect header
-    });
-    updateCookies(tunnelPostResp.headers.get('set-cookie'));
-    console.log('POST tunnel creation response status:', tunnelPostResp.status);
-    console.log('POST tunnel creation response headers:', JSON.stringify(Object.fromEntries(tunnelPostResp.headers.entries()), null, 2));
-
-    // 4. Extract tunnel ID from X-Remix-Redirect header
-    let tunnelId: string | undefined = undefined;
-    const remixRedirect = tunnelPostResp.headers.get('x-remix-redirect');
-    console.log('\nChecking for tunnel ID in X-Remix-Redirect header:', remixRedirect);
-    if (remixRedirect) {
-      const tunnelIdMatch = remixRedirect.match(/\/account\/tunnels\/([a-f0-9\-]+)/);
-      if (tunnelIdMatch) {
-        tunnelId = tunnelIdMatch[1];
-        console.log('Successfully extracted Tunnel ID:', tunnelId);
-      }
-    }
-
-    if (tunnelId) {
-      // --- New Polling for Tunnel Details ---
-      console.log('Starting polling for tunnel details...');
-      let tunnelDetailsPollingSuccess = false;
-      const maxTunnelPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds)
-      let assignedDomain: string | undefined = undefined;
-      let staticIp4: string | undefined = undefined;
-      let portStart: number | undefined = undefined;
-
-      for (let i = 0; i < maxTunnelPollingAttempts; i++) {
-        console.log(`Tunnel details polling attempt ${i + 1}/${maxTunnelPollingAttempts}`);
-
-        // First GET to /account/tunnels/:tunnelId?_data=root
-        const tunnelRootUrl = `https://playit.gg/account/tunnels/${tunnelId}?_data=root`;
-        try {
-          const tunnelRootResp = await fetch(tunnelRootUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-            'Referer': `https://playit.gg/account/tunnels/${tunnelId}`
-          }) });
-          updateCookies(tunnelRootResp.headers.get('set-cookie'));
-          console.log('Tunnel details root GET response status:', tunnelRootResp.status);
-        } catch (error) {
-          console.error(`Tunnel details root GET failed: ${error}`);
-        }
-
-        // Second GET to /account/tunnels/:tunnelId?_data=routes%2Faccount
-        const tunnelAccountRouteUrl = `https://playit.gg/account/tunnels/${tunnelId}?_data=routes%2Faccount`;
-        let tunnelAccountRouteRespJson: any = null;
-        try {
-          const tunnelAccountRouteResp = await fetch(tunnelAccountRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-            'Referer': `https://playit.gg/account/tunnels/${tunnelId}`
-          }) });
-          updateCookies(tunnelAccountRouteResp.headers.get('set-cookie'));
-          console.log('Tunnel details account route GET response status:', tunnelAccountRouteResp.status);
-          if (tunnelAccountRouteResp.ok) {
-            try {
-               tunnelAccountRouteRespJson = await tunnelAccountRouteResp.json();
-               console.log('Tunnel details account route GET response body sample:', JSON.stringify(tunnelAccountRouteRespJson, null, 2).substring(0, 500) + '...'); // Log beginning of response
-            } catch (jsonError) {
-               console.error('Failed to parse Tunnel details account route response JSON:', jsonError);
-            }
-          }
-        } catch (error) {
-          console.error(`Tunnel details account route GET failed: ${error}`);
-        }
-
-        // Third GET to /account/tunnels/:tunnelId?_data=routes%2Faccount%2Ftunnels%2F%24tunnelId
-        const tunnelDetailsRouteUrl = `https://playit.gg/account/tunnels/${tunnelId}?_data=routes%2Faccount%2Ftunnels%2F%24tunnelId`;
-        try {
-           // We don't necessarily need the response from this one, just to make the request
-          const tunnelDetailsRouteResp = await fetch(tunnelDetailsRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
-            'Referer': `https://playit.gg/account/tunnels/${tunnelId}`
-          }) });
-          updateCookies(tunnelDetailsRouteResp.headers.get('set-cookie')); // Update cookies after the last request
-          console.log('Tunnel details route GET response status:', tunnelDetailsRouteResp.status);
-        } catch (error) {
-          console.error(`Tunnel details route GET failed: ${error}`);
-        }
-
-        // Check if the tunnel data is available in the second response and extract details
-        if (tunnelAccountRouteRespJson && tunnelAccountRouteRespJson.tunnels && Array.isArray(tunnelAccountRouteRespJson.tunnels.tunnels)) {
-          const targetTunnel = tunnelAccountRouteRespJson.tunnels.tunnels.find((t: any) => t.id === tunnelId);
-          if (targetTunnel && targetTunnel.alloc && targetTunnel.alloc.data) {
-            assignedDomain = targetTunnel.alloc.data.assigned_domain;
-            staticIp4 = targetTunnel.alloc.data.static_ip4;
-            portStart = targetTunnel.alloc.data.port_start;
-            if (assignedDomain && staticIp4 && portStart) {
-              console.log('Successfully extracted assigned_domain, static_ip4, and port_start.');
-              tunnelDetailsPollingSuccess = true;
-              break; // Exit polling loop
-            }
-          }
-        }
-
-        await delay(3000); // Delay before next polling attempt
-      }
-
-      if (tunnelDetailsPollingSuccess) {
-        finalMessage = `Tunnel created and details retrieved. Agent ID: ${detectedAgentId}, Tunnel ID: ${tunnelId}`;
-        if (assignedDomain) finalMessage += `, Domain: ${assignedDomain}`;
-        if (staticIp4) finalMessage += `, IPv4: ${staticIp4}`;
-        if (portStart) finalMessage += `, Port Start: ${portStart}`;
-        console.log('=== Tunnel Details Polling Successful ===');
-        console.log(`Assigned Domain: ${assignedDomain}, Static IPv4: ${staticIp4}, Port Start: ${portStart}`);
-        return { success: true, message: finalMessage, data: { agentId: detectedAgentId, tunnelId, assignedDomain, staticIp4, portStart } };
-      } else {
-         console.warn('Tunnel details (assigned_domain/static_ip4) could not be retrieved after polling.');
-         finalMessage += ' (Tunnel details polling failed)';
-         return { success: true, message: finalMessage, data: { agentId: detectedAgentId, tunnelId } };
-      }
-
-    } else {
-      console.warn('Tunnel ID could not be extracted from X-Remix-Redirect header.');
-      console.log('=== Tunnel Creation Process Completed (No Tunnel ID) ===');
-      return { success: true, message: finalMessage + ' (Tunnel ID not found)', data: { agentId: detectedAgentId } };
-    }
-  } catch (tunnelError: any) {
-    console.error('=== Tunnel Creation Process Failed ===');
-    console.error('Error during tunnel creation POST or details polling:', tunnelError);
-    finalMessage += ' (Tunnel creation or details polling failed)';
-    // If agent ID was obtained before the failure, include it.
-    return { success: false, message: finalMessage, data: { agentId: detectedAgentId } };
-  }
+  // Return the result from the refactored function
+  return tunnelResult;
 });
 }
 
@@ -749,4 +550,152 @@ export function cleanupPlayitProcess() {
 
 export function getPlayitProcess(): ChildProcess | null {
   return playitProcess;
+}
+
+async function createAndPollForTunnelDetails(agentId: string): Promise<StartTunnelResponse> {
+  let finalMessage = ''; // Message for this function's result
+  let tunnelId: string | undefined = undefined;
+  let assignedDomain: string | undefined = undefined;
+  let staticIp4: string | undefined = undefined;
+  let portStart: number | undefined = undefined;
+
+  // 3. POST to create tunnel (browser-mimic)
+  console.log('\nMaking POST request to create tunnel for Agent ID:', agentId);
+  const tunnelPostUrl = `https://playit.gg/account/agents/${agentId}/tunnels/add?index=&_data=routes%2Faccount%2Fagents%2F%24agentId%2Ftunnels%2Fadd%2Findex`;
+  console.log('POST Request URL:', tunnelPostUrl);
+  const tunnelPostBody = new URLSearchParams({
+    region: 'global',
+    tunnel_type: 'minecraft-java',
+    enabled: 'on',
+  });
+  console.log('POST Request Body:', tunnelPostBody.toString());
+  try {
+    const tunnelPostResp = await fetch(tunnelPostUrl, {
+      method: 'POST',
+      headers: buildHeaders({
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'Origin': 'https://playit.gg',
+        'Referer': `https://playit.gg/account/agents/${agentId}/tunnels/add`,
+        'Accept': '*/*',
+      }),
+      body: tunnelPostBody.toString(),
+      redirect: 'manual', // So we can read the X-Remix-Redirect header
+    });
+    updateCookies(tunnelPostResp.headers.get('set-cookie'));
+    console.log('POST tunnel creation response status:', tunnelPostResp.status);
+    console.log('POST tunnel creation response headers:', JSON.stringify(Object.fromEntries(tunnelPostResp.headers.entries()), null, 2));
+
+    // 4. Extract tunnel ID from X-Remix-Redirect header
+    const remixRedirect = tunnelPostResp.headers.get('x-remix-redirect');
+    console.log('\nChecking for tunnel ID in X-Remix-Redirect header:', remixRedirect);
+    if (remixRedirect) {
+      const tunnelIdMatch = remixRedirect.match(/\/account\/tunnels\/([a-f0-9\-]+)/);
+      if (tunnelIdMatch) {
+        tunnelId = tunnelIdMatch[1];
+        console.log('Successfully extracted Tunnel ID:', tunnelId);
+      }
+    }
+  } catch (error) {
+    console.error(`Tunnel creation POST failed: ${error}`);
+    finalMessage = 'Tunnel creation POST failed.';
+    // Return failure from this function if POST fails
+    return { success: false, message: finalMessage, data: { agentId } };
+  }
+
+  if (tunnelId) {
+    // --- Polling for Tunnel Details ---
+    console.log('Starting polling for tunnel details...');
+    let tunnelDetailsPollingSuccess = false;
+    const maxTunnelPollingAttempts = 60; // Poll for max 60 attempts (approx 60 seconds)
+
+    for (let i = 0; i < maxTunnelPollingAttempts; i++) {
+      console.log(`Tunnel details polling attempt ${i + 1}/${maxTunnelPollingAttempts}`);
+
+      // First GET to /account/tunnels/:tunnelId?_data=root
+      const tunnelRootUrl = `https://playit.gg/account/tunnels/${tunnelId}?_data=root`;
+      try {
+        const tunnelRootResp = await fetch(tunnelRootUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
+          'Referer': `https://playit.gg/account/tunnels/${tunnelId}`
+        }) });
+        updateCookies(tunnelRootResp.headers.get('set-cookie'));
+        console.log('Tunnel details root GET response status:', tunnelRootResp.status);
+      } catch (error) {
+        console.error(`Tunnel details root GET failed: ${error}`);
+      }
+
+      // Second GET to /account/tunnels/:tunnelId?_data=routes%2Faccount
+      const tunnelAccountRouteUrl = `https://playit.gg/account/tunnels/${tunnelId}?_data=routes%2Faccount`;
+      let tunnelAccountRouteRespJson: any = null;
+      try {
+        const tunnelAccountRouteResp = await fetch(tunnelAccountRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
+          'Referer': `https://playit.gg/account/tunnels/${tunnelId}`
+        }) });
+        updateCookies(tunnelAccountRouteResp.headers.get('set-cookie'));
+        console.log('Tunnel details account route GET response status:', tunnelAccountRouteResp.status);
+        if (tunnelAccountRouteResp.ok) {
+          try {
+             tunnelAccountRouteRespJson = await tunnelAccountRouteResp.json();
+             console.log('Tunnel details account route GET response body sample:', JSON.stringify(tunnelAccountRouteRespJson, null, 2).substring(0, 500) + '...'); // Log beginning of response
+          } catch (jsonError) {
+             console.error('Failed to parse Tunnel details account route response JSON:', jsonError);
+          }
+        }
+      } catch (error) {
+        console.error(`Tunnel details account route GET failed: ${error}`);
+      }
+
+      // Third GET to /account/tunnels/:tunnelId?_data=routes%2Faccount%2Ftunnels%2F%24tunnelId
+      const tunnelDetailsRouteUrl = `https://playit.gg/account/tunnels/${tunnelId}?_data=routes%2Faccount%2Ftunnels%2F%24tunnelId`;
+      try {
+         // We don't necessarily need the response from this one, just to make the request
+        const tunnelDetailsRouteResp = await fetch(tunnelDetailsRouteUrl, { method: 'GET', headers: buildPostAgentIdHeaders({
+          'Referer': `https://playit.gg/account/tunnels/${tunnelId}`
+        }) });
+        updateCookies(tunnelDetailsRouteResp.headers.get('set-cookie')); // Update cookies after the last request
+        console.log('Tunnel details route GET response status:', tunnelDetailsRouteResp.status);
+      } catch (error) {
+        console.error(`Tunnel details route GET failed: ${error}`);
+      }
+
+      // Check if the tunnel data is available in the second response and extract details
+      if (tunnelAccountRouteRespJson && tunnelAccountRouteRespJson.tunnels && Array.isArray(tunnelAccountRouteRespJson.tunnels.tunnels)) {
+        const targetTunnel = tunnelAccountRouteRespJson.tunnels.tunnels.find((t: any) => t.id === tunnelId);
+        if (targetTunnel && targetTunnel.alloc && targetTunnel.alloc.data) {
+          assignedDomain = targetTunnel.alloc.data.assigned_domain;
+          staticIp4 = targetTunnel.alloc.data.static_ip4;
+          portStart = targetTunnel.alloc.data.port_start;
+          if (assignedDomain && staticIp4 && portStart) {
+            console.log('Successfully extracted assigned_domain, static_ip4, and port_start.');
+            tunnelDetailsPollingSuccess = true;
+            break; // Exit polling loop
+          }
+        }
+      }
+
+      await delay(3000); // Delay before next polling attempt
+    }
+
+    if (tunnelDetailsPollingSuccess) {
+      finalMessage = `Tunnel created and details retrieved. Agent ID: ${agentId}, Tunnel ID: ${tunnelId}`;
+      if (assignedDomain) finalMessage += `, Domain: ${assignedDomain}`;
+      if (staticIp4) finalMessage += `, IPv4: ${staticIp4}`;
+      if (portStart) finalMessage += `, Port Start: ${portStart}`;
+      console.log('=== Tunnel Details Polling Successful ===');
+      console.log(`Assigned Domain: ${assignedDomain}, Static IPv4: ${staticIp4}, Port Start: ${portStart}`);
+      return { success: true, message: finalMessage, data: { agentId, tunnelId, assignedDomain, staticIp4, portStart } };
+    } else {
+       console.warn('Tunnel details (assigned_domain/static_ip4) could not be retrieved after polling.');
+       finalMessage = 'Tunnel details polling failed.';
+       // Decide if failure here should trigger full retry or just report failure
+       // For now, report failure but include agentId and loginLink
+       return { success: false, message: finalMessage, data: { agentId } };
+    }
+
+  } else {
+    console.warn('Tunnel ID could not be extracted from X-Remix-Redirect header after POST.');
+    finalMessage = 'Tunnel ID not found after creation POST.';
+    // Decide if failure here should trigger full retry or just report failure
+    // For now, report failure but include agentId and loginLink
+    return { success: false, message: finalMessage, data: { agentId } };
+  }
 }
