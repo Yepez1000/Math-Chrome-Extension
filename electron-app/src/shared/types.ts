@@ -26,11 +26,19 @@ export const IPC_CHANNELS = {
   TUNNEL_ADDRESS: 'tunnel-address',
   CLAIM_LINK: 'claim-link',
   PLAYIT_API_CHAIN: 'playit-api-chain',
-  ACCEPT_EULA: 'accept-eula'
+  ACCEPT_EULA: 'accept-eula',
+  CLIPBOARD_WRITE: 'clipboard-write',
 } as const; 
 
 export interface SystemInfo {
   totalRam: number;
   availableRam: number;
   cpuCores: number;
-} 
+}
+
+export type StatusMessage = {
+  message: string
+  status: "pending" | "success" | "error"
+  id: string // Add unique ID
+}
+

@@ -15,6 +15,11 @@ interface ElectronAPI {
     removeListener: (channel: string, func: (...args: any[]) => void) => void
     removeAllListeners: (channel: string) => void
   }
+
+  // Add clipboard functionality
+  clipboard: {
+    writeText: (text: string) => void
+  }
 }
 
 // Implement the API with whitelisted IPC calls and other functionalities
@@ -37,7 +42,9 @@ const api: ElectronAPI = {
         IPC_CHANNELS.START_TUNNEL,
         IPC_CHANNELS.STOP_TUNNEL,
         IPC_CHANNELS.PLAYIT_API_CHAIN,
-        'get-system-info'
+        'get-system-info',
+        // Whitelist clipboard write channel
+        IPC_CHANNELS.CLIPBOARD_WRITE,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)
@@ -83,6 +90,13 @@ const api: ElectronAPI = {
       }
     },
   },
+
+  // Implement clipboard functionality using IPC invoke
+  clipboard: {
+    writeText: (text: string) => {
+      ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE, text);
+    }
+  }
 }
 
 // Use `contextBridge` APIs to expose the API to the renderer

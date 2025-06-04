@@ -8,8 +8,9 @@ import { Loader2, CheckCircle, XCircle, Copy, ExternalLink, AlertTriangle } from
 import { useToast } from "@renderer/hooks/use-toast"
 import { useServerConfigStore } from "@/stores/server-config-store"
 import { useServerStartupStore } from "@/stores/server-startup-store"
-import { IPC_CHANNELS } from "@shared/types"
+import { IPC_CHANNELS, StatusMessage as StatusMessageType } from "@shared/types"
 import { useServerStore } from "@/lib/store"
+import React from "react"
 
 interface ServerStartupScreenProps {
   onComplete: () => void
@@ -172,12 +173,15 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   }, []) // Remove executeStep from dependencies since it's stable
 
   // Handle copy to clipboard
-  const copyToClipboard = () => {
+  const copyToClipboard = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault(); // Prevent default button behavior
     if (dnsAddress) {
       window.electronAPI.clipboard.writeText(dnsAddress)
       toast({
-        title: "Copied to clipboard",
+        title: "Link Copied!",
         description: "Server address has been copied to your clipboard",
+        variant: "default",
+        className: "bg-space-cadet text-linen border-cool-gray/30",
       })
     }
   }
@@ -194,59 +198,34 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     executeStep(0)
   }
 
-  // Extract status message component
-  const StatusMessage = ({ status, message }: { status: "pending" | "success" | "error", message: string }) => (
-    <motion.div
-      key={`${message}`}
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3 }}
-      className="flex items-start gap-3"
-    >
-      {status === "pending" && <Loader2 className="h-5 w-5 text-cool-gray animate-spin mt-0.5" />}
-      {status === "success" && <CheckCircle className="h-5 w-5 text-linen mt-0.5" />}
-      {status === "error" && <XCircle className="h-5 w-5 text-red-400 mt-0.5" />}
-      <span className={status === "error" ? "text-red-400" : status === "success" ? "text-linen" : "text-cool-gray"}>
-        {message}
-      </span>
-    </motion.div>
-  )
-
   // Extract server address component
-  const ServerAddress = ({ address, onCopy }: { address: string, onCopy: () => void }) => (
-    <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      transition={{ duration: 0.5, delay: 0.5 }}
-      className="mt-6 pt-4 border-t border-cool-gray/20"
-    >
-      <div className="space-y-4">
-        <div>
-          <h4 className="text-linen font-medium mb-2">Your Server Address</h4>
-          <div className="flex items-center gap-2">
-            <div className="bg-space-cadet p-2 rounded flex-1 text-linen font-mono">{address}</div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={onCopy}
-              className="border-linen/30 text-linen hover:bg-linen/10"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-          <p className="text-sm text-cool-gray mt-2">
-            Share this address with friends so they can connect to your server
-          </p>
-        </div>
-
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
-          <Button onClick={onComplete} className="w-full bg-linen text-night hover:bg-linen/90">
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Continue to Dashboard
+  const ServerAddress = ({ address, onCopy }: { address: string, onCopy: (event: React.MouseEvent<HTMLButtonElement>) => void }) => (
+    <div className="space-y-4">
+      <div>
+        <h4 className="text-linen font-medium mb-2">Your Server Address</h4>
+        <div className="flex items-center gap-2">
+          <div className="bg-space-cadet p-2 rounded flex-1 text-linen font-mono">{address}</div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onCopy}
+            className="border-linen/30 text-linen hover:bg-linen/10"
+          >
+            <Copy className="h-4 w-4" />
           </Button>
-        </motion.div>
+        </div>
+        <p className="text-sm text-cool-gray mt-2">
+          Share this address with friends so they can connect to your server
+        </p>
       </div>
-    </motion.div>
+
+      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
+        <Button onClick={onComplete} className="w-full bg-linen text-night hover:bg-linen/90">
+          <ExternalLink className="mr-2 h-4 w-4" />
+          Continue to Dashboard
+        </Button>
+      </motion.div>
+    </div>
   )
 
   // Extract error state component
@@ -299,8 +278,8 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
                 <div className="space-y-3">
                   <AnimatePresence>
-                    {statusMessages.map((status, index) => (
-                      <StatusMessage key={`${index}-${status.message}`} {...status} />
+                    {statusMessages.map((statusMessage) => (
+                      <StatusMessage key={statusMessage.id} {...statusMessage} />
                     ))}
                   </AnimatePresence>
 
@@ -317,7 +296,16 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
                 </div>
 
                 {isComplete && dnsAddress && (
-                  <ServerAddress address={dnsAddress} onCopy={copyToClipboard} />
+                  <motion.div
+                    key="server-address-container"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    transition={{ duration: 0.5, delay: 0.5 }}
+                    layout
+                    className="mt-6 pt-4 border-t border-cool-gray/20"
+                  >
+                    <ServerAddress address={dnsAddress} onCopy={copyToClipboard} />
+                  </motion.div>
                 )}
 
                 {isError && <ErrorState onRetry={handleRetry} />}
@@ -338,3 +326,24 @@ const globalMockIpcCalls = async (handler: string) => {
   console.log(`Mock handler called for: ${handler}`)
   return { success: true } // Mocked success response
 }
+
+// Move StatusMessage component definition outside
+const StatusMessage = React.memo(({ status, message, id }: StatusMessageType) => {
+  return (
+    <motion.div
+      key={id} // Use the unique ID as the key
+      initial={{ opacity: 0, x: -10 }} // Keep initial state
+      animate={{ opacity: 1, x: 0 }} // Revert to static animate prop
+      transition={{ duration: 0.3 }} // Revert to static transition prop
+      layout // Layout remains
+      className="flex items-start gap-3"
+    >
+      {status === "pending" && <Loader2 className="h-5 w-5 text-cool-gray animate-spin mt-0.5" />}
+      {status === "success" && <CheckCircle className="h-5 w-5 text-linen mt-0.5" />}
+      {status === "error" && <XCircle className="h-5 w-5 text-red-400 mt-0.5" />}
+      <span className={status === "error" ? "text-red-400" : status === "success" ? "text-linen" : "text-cool-gray"}>
+        {message}
+      </span>
+    </motion.div>
+  );
+});

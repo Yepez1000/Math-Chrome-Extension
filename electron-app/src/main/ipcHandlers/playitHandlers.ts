@@ -151,16 +151,27 @@ export function registerPlayitHandlers(window: BrowserWindow) {
         devError(`Logout request failed: ${error}`);
       }
 
-    let binaryPath: string;
-    try {
-      binaryPath = await getPlayitBinaryPath();
-    } catch (error: any) {
-        const errorMessage = `Setup Error: ${error.message}`;
-        devError(errorMessage);
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-        finalMessage = errorMessage;
-        break;
+      // Add the specified GET request after logout
+      devLog('Fetching root data after logout...');
+      try {
+        const rootDataUrl = 'https://playit.gg/?_data=root';
+        const rootDataResp = await fetch(rootDataUrl, { method: 'GET', headers: buildHeaders({}) });
+        // You might want to process the response here if needed
+        devLog('Root data GET response status:', rootDataResp.status);
+      } catch (error) {
+        devError(`Root data GET request failed: ${error}`);
       }
+
+      let binaryPath: string;
+      try {
+        binaryPath = await getPlayitBinaryPath();
+      } catch (error: any) {
+          const errorMessage = `Setup Error: ${error.message}`;
+          devError(errorMessage);
+          mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
+          finalMessage = errorMessage;
+          break;
+        }
 
       // 2. Spawn a new process
       let claimCode: string | undefined = undefined;
