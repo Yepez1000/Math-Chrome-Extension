@@ -1,15 +1,19 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
 import { registerSystemInfoHandler } from './systemInfo';
 import { registerPlayitHandlers } from './playitHandlers';
+// Import clipboard handlers
 import { registerClipboardHandlers } from './clipboardHandlers';
 
-export function registerAllIpcHandlers(mainWindow: BrowserWindow) {
+// Modify to not expect mainWindow
+export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
   registerServerDirectoryHandler();
   registerWorldHandlers();
   registerSystemInfoHandler();
-  registerPlayitHandlers(mainWindow);
+  // Call registerPlayitHandlers without arguments
+  registerPlayitHandlers();
+  // Register clipboard handlers
   registerClipboardHandlers();
 }
 

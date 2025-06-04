@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app } from 'electron'; // Import 'app'
+import { ipcMain, /* BrowserWindow, */ app } from 'electron'; // Import 'app'
 import { spawn, ChildProcess, exec } from 'child_process';
 import { IPC_CHANNELS } from '../../shared/types';
 import { join } from 'path';
@@ -7,7 +7,8 @@ import { URLSearchParams } from 'url'; // Import URLSearchParams
 import { devLog, devError } from '../utils/logger'
 
 let playitProcess: ChildProcess | null = null;
-let mainWindow: BrowserWindow | null = null;
+// Remove mainWindow variable
+// let mainWindow: BrowserWindow | null = null;
 
 type StartTunnelResponse = { success: boolean; message: string; data?: { agentId?: string, tunnelId?: string, assignedDomain?: string, staticIp4?: string, portStart?: number } }; // Removed loginLink from type
 
@@ -111,8 +112,10 @@ async function getPlayitBinaryPath(): Promise<string> {
   return binaryPath;
 }
 
-export function registerPlayitHandlers(window: BrowserWindow) {
-  mainWindow = window;
+// Remove window parameter
+export function registerPlayitHandlers(/* window: BrowserWindow */) {
+  // Remove assignment to mainWindow
+  // mainWindow = window;
 
   ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event, { serverPort }): Promise<StartTunnelResponse> => {
     // Validate serverPort
@@ -168,7 +171,8 @@ export function registerPlayitHandlers(window: BrowserWindow) {
       } catch (error: any) {
           const errorMessage = `Setup Error: ${error.message}`;
           devError(errorMessage);
-          mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
+          // Use _event.sender.send to send error back to the renderer that sent the message
+          _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
           finalMessage = errorMessage;
           break;
         }
@@ -387,7 +391,7 @@ export function registerPlayitHandlers(window: BrowserWindow) {
       } catch (apiError: any) {
         const errorMessage = `API Chain Error (Steps 1-3): ${apiError.message}`;
       devError(errorMessage);
-        mainWindow?.webContents.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
+        _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
         finalMessage = errorMessage;
         cleanupPlayitProcess();
         await delay(1000);
