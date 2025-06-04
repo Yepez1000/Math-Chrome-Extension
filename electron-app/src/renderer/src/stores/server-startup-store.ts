@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 type StatusMessage = {
   message: string
-  status: "pending" | "success" | "error" | "Claim Required"
+  status: "pending" | "success" | "error"
 }
 
 interface ServerStartupState {

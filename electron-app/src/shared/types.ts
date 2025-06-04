@@ -25,7 +25,8 @@ export const IPC_CHANNELS = {
   TUNNEL_ERROR: 'tunnel-error',
   TUNNEL_ADDRESS: 'tunnel-address',
   CLAIM_LINK: 'claim-link',
-  PLAYIT_API_CHAIN: 'playit-api-chain'
+  PLAYIT_API_CHAIN: 'playit-api-chain',
+  ACCEPT_EULA: 'accept-eula'
 } as const; 
 
 export interface SystemInfo {
