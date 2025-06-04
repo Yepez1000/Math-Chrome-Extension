@@ -165,17 +165,17 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
         devError(`Root data GET request failed: ${error}`);
       }
 
-      let binaryPath: string;
-      try {
-        binaryPath = await getPlayitBinaryPath();
-      } catch (error: any) {
-          const errorMessage = `Setup Error: ${error.message}`;
+    let binaryPath: string;
+    try {
+      binaryPath = await getPlayitBinaryPath();
+    } catch (error: any) {
+        const errorMessage = `Setup Error: ${error.message}`;
           devError(errorMessage);
           // Use _event.sender.send to send error back to the renderer that sent the message
           _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-          finalMessage = errorMessage;
-          break;
-        }
+        finalMessage = errorMessage;
+        break;
+      }
 
       // 2. Spawn a new process
       let claimCode: string | undefined = undefined;
@@ -225,18 +225,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
                 claimCode = claimCodeMatch[1];
                 devLog('Claim code found in stdout:', claimCode);
                 resolve({ type: 'claimCode', value: claimCode });
-                return;
               }
 
               if (cleanChunk.includes("checking if secret key is valid")) {
                   devLog('Detected existing agent flow start signal.');
-                  return;
-              }
-
-              loginLinkMatch = cleanChunk.match(/login:\s*(https:\/\/playit\.gg\/login\/guest-account\/[a-zA-Z0-9=-]+)/);
-              if (loginLinkMatch && loginLinkMatch[1]) {
-                devLog('Detected existing agent login link.');
-                resolve({ type: 'existingAgent', value: loginLinkMatch[1] });
+                  resolve({ type: 'existingAgent' });
                 return;
               }
             }
@@ -246,13 +239,13 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
           playitProcess?.on('close', (code) => {
             devLog(`Playit process closed with code ${code}.`);
-            if (!claimCodeMatch && !loginLinkMatch && !visitLinkDetectedInitially) {
+            if (!claimCodeMatch && code !== 0) {
                 reject(new Error(`Playit process closed unexpectedly with code ${code}.`));
             }
           });
           playitProcess?.on('error', (err) => {
             devError(`Playit process error: ${err.message}`);
-             if (!claimCodeMatch && !loginLinkMatch && !visitLinkDetectedInitially) {
+             if (!claimCodeMatch) {
                 reject(new Error(`Playit process error: ${err.message}`));
              }
           });
@@ -265,18 +258,62 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
      const initialSignalResult = await (claimSignalPromise || Promise.reject(new Error("claimSignalPromise was not initialized.")));
 
      if (initialSignalResult && initialSignalResult.type === 'existingAgent') {
-         devLog('Existing agent detected. Login link:', initialSignalResult.value);
+         devLog('Existing agent detected. Stopping current process and getting login URL...');
 
+         // Step 1: Clean up previous process
+         cleanupPlayitProcess();
+         await delay(500); // Give process a moment to terminate
+
+         // Step 2: Run 'playit account login-url' command and read output
+         let loginUrl: string | undefined = undefined;
+         try {
+             const loginUrlCommand = 'playit account login-url';
+             devLog(`Running command: ${loginUrlCommand}`);
+
+             loginUrl = await new Promise<string>((resolve, reject) => {
+                 exec(loginUrlCommand, (error, stdout, stderr) => {
+                     if (error) {
+                         devError(`Error running 'playit account login-url': ${error.message}`);
+                         reject(new Error(`Failed to get login URL: ${error.message}`));
+                         return;
+                     }
+                     if (stderr) {
+                        devError(`Stderr from 'playit account login-url': ${stderr}`);
+                     }
+                     const url = stdout.trim();
+                     if (url) {
+                         devLog(`Login URL obtained: ${url}`);
+                         resolve(url);
+                     } else {
+                         devError('playit account login-url returned no output.');
+                         reject(new Error('Failed to get login URL: No output from command.'));
+                     }
+                 });
+             });
+         } catch (error: any) {
+             const errorMessage = `Login URL Error: ${error.message}`;
+             devError(errorMessage);
+             _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
+             finalMessage = errorMessage;
+             // Trigger full retry if login URL cannot be obtained
+             continue;
+         }
+
+         // Step 3: Feed the login URL into the old flow
          devLog('Making GET request with login link...');
          try {
-             const loginLinkResp = await fetch(initialSignalResult.value as string, { method: 'GET'});
+             const loginLinkResp = await fetch(loginUrl as string, { method: 'GET'});
              updateCookies(loginLinkResp.headers.get('set-cookie'));
              devLog('Login link GET response status:', loginLinkResp.status);
          } catch (error) {
              devError(`GET request with login link failed: ${error}`);
+             finalMessage = `Failed to use login URL: ${error}`;
+             cleanupPlayitProcess();
+             await delay(1000);
+             continue;
          }
 
-         finalMessage = 'Existing agent detected. Using provided login link.';
+         finalMessage = 'Existing agent detected. Used login URL.';
 
          devLog('Fetching agent details...');
          const agentDetailsUrl = 'https://playit.gg/account/agents?_data=routes%2Faccount';
