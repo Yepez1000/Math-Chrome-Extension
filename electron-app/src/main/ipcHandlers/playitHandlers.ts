@@ -205,8 +205,6 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
         claimSignalPromise = new Promise<{ type: 'claimCode' | 'visitLink' | 'existingAgent'; value?: string }>((resolve, reject) => {
           let claimCodeMatch: RegExpMatchArray | null = null;
-          let loginLinkMatch: RegExpMatchArray | null = null;
-          let visitLinkDetectedInitially = false;
 
           const listener = (data: any) => {
             const chunk = data.toString();
