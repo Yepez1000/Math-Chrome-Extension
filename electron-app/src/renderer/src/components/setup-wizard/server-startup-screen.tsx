@@ -174,7 +174,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   // Handle copy to clipboard
   const copyToClipboard = () => {
     if (dnsAddress) {
-      navigator.clipboard.writeText(dnsAddress)
+      window.electronAPI.clipboard.writeText(dnsAddress)
       toast({
         title: "Copied to clipboard",
         description: "Server address has been copied to your clipboard",
