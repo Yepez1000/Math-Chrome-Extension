@@ -1,6 +1,7 @@
 import { ipcMain, dialog, app } from 'electron';
 import { join, isAbsolute, normalize } from 'path';
 import { DirectorySelectionResponse, IPC_CHANNELS } from '../../shared/types';
+//import { devLog, devError } from '../utils/logger';
 
 export function registerServerDirectoryHandler() {
   ipcMain.handle(IPC_CHANNELS.SELECT_SERVER_DIRECTORY, async (): Promise<DirectorySelectionResponse> => {
