@@ -279,7 +279,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   // Determine the text for the final status/progress line
   const renderProgressText = () => {
     if (currentStep === 3 && playitTunnelStatusDetails && !isComplete && !isError) {
-       return `${playitTunnelStatusDetails} (Step 4/4)`;
+       return `${playitTunnelStatusDetails}... (Step 4/4)`;
     } else if (!isComplete && !isError && currentStep < startupSteps.length) {
       return `Processing... (Step ${currentStep + 1}/${startupSteps.length})`;
     } else if (isComplete && !isError) {
