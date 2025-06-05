@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { IPC_CHANNELS } from '../../../shared/types';
 
 export type WizardStep = "detect" | "flavor" | "modpack" | "world" | "performance" | "review"
 
@@ -35,7 +36,7 @@ const initialConfig: ServerConfig = {
   serverType: "vanilla",
   ram: 4,
   hostingMode: "play+host",
-  serverDirectory: "C:\\MinecraftServers\\MyServer",
+  // serverDirectory: "C:\\MinecraftServers\\MyServer", // Will be set by fetchDefaultServerDirectory if not already set
 }
 
 const stepOrder: WizardStep[] = ["detect", "flavor", "modpack", "world", "performance", "review"]
@@ -80,4 +81,21 @@ export const useServerConfigStore = create<ServerConfigState>((set, get) => ({
       set({ currentStep: stepOrder[currentIndex - 1] })
     }
   }
-})) 
+}))
+
+// Fetch default server directory on store initialization if not already set
+async function fetchDefaultServerDirectory() {
+  const currentConfig = useServerConfigStore.getState().config;
+  if (!currentConfig.serverDirectory) {
+    try {
+      const defaultPath = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_DEFAULT_SERVER_DIRECTORY);
+      if (defaultPath) {
+        useServerConfigStore.getState().updateConfig({ serverDirectory: defaultPath });
+      }
+    } catch (error) {
+      console.error('Failed to fetch default server directory:', error);
+    }
+  }
+}
+
+fetchDefaultServerDirectory(); 

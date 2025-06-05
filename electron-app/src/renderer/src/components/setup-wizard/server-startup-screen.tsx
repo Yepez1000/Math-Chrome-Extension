@@ -102,10 +102,10 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
           }
           break
         case IPC_CHANNELS.ACCEPT_EULA:
-          // Mock the EULA acceptance step
-          result = await mockIpcCalls(step.handler)
+          // Call the real EULA acceptance handler
+          result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.ACCEPT_EULA, config.serverDirectory)
           if (!result.success) {
-            throw new Error("Mock EULA acceptance failed.")
+            throw new Error(result.message || "Failed to accept EULA")
           }
           break
         default:

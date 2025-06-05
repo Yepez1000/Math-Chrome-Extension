@@ -3,6 +3,7 @@ import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
 import { registerSystemInfoHandler } from './systemInfo';
 import { registerPlayitHandlers } from './playitHandlers';
+import { registerMinecraftHandlers } from './minecraftHandlers';
 // Import clipboard handlers
 import { registerClipboardHandlers } from './clipboardHandlers';
 
@@ -13,6 +14,8 @@ export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
   registerSystemInfoHandler();
   // Call registerPlayitHandlers without arguments
   registerPlayitHandlers();
+  // Register Minecraft handlers
+  registerMinecraftHandlers();
   // Register clipboard handlers
   registerClipboardHandlers();
 }

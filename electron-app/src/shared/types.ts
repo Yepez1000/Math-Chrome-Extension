@@ -28,6 +28,7 @@ export const IPC_CHANNELS = {
   PLAYIT_API_CHAIN: 'playit-api-chain',
   ACCEPT_EULA: 'accept-eula',
   CLIPBOARD_WRITE: 'clipboard-write',
+  GET_DEFAULT_SERVER_DIRECTORY: 'get-default-server-directory',
 } as const; 
 
 export interface SystemInfo {

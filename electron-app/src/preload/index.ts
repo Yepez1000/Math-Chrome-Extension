@@ -45,6 +45,10 @@ const api: ElectronAPI = {
         'get-system-info',
         // Whitelist clipboard write channel
         IPC_CHANNELS.CLIPBOARD_WRITE,
+        // Whitelist EULA acceptance channel
+        IPC_CHANNELS.ACCEPT_EULA,
+        // Whitelist channel for getting default server directory
+        IPC_CHANNELS.GET_DEFAULT_SERVER_DIRECTORY,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)

@@ -21,4 +21,18 @@ export function registerServerDirectoryHandler() {
 
     return selectedPath;
   });
+
+  // Handler to get the default server directory
+  ipcMain.handle(IPC_CHANNELS.GET_DEFAULT_SERVER_DIRECTORY, async (): Promise<string | null> => {
+    try {
+      const defaultServerPath = normalize(join(app.getPath('documents'), 'EasyCraftServers'));
+      // Note: We are not creating the directory here, just returning the suggested path.
+      // The application will create it later when needed.
+      return defaultServerPath;
+    } catch (error) {
+      //devError('Failed to get default server directory:', error);
+      console.error('Failed to get default server directory:', error);
+      return null;
+    }
+  });
 }

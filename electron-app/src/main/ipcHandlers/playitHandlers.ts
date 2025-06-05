@@ -140,7 +140,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       if (fullRetryAttempts > 1) {
          _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: `Retrying Setup` });
       } else {
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Connecting to Playit" });
+         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Starting Setup" });
       }
 
       // Reset cookies for a fresh attempt
@@ -448,11 +448,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       }
 
     devLog('Starting claim polling phase (GET requests)...');
-    _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Connecting to Playit" });
-    const getHeaders = buildHeaders({'Accept': '*/*'});
-    let pollingAttempts = 0;
-    const maxPollingAttempts = 60;
-    let claimPollingSuccess = false;
+      _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Polling Claim" });
+      const getHeaders = buildHeaders({'Accept': '*/*'});
+      let pollingAttempts = 0;
+      const maxPollingAttempts = 60;
+      let claimPollingSuccess = false;
     let shouldExitPolling = false;
 
     const pollingListener = (data: any) => {
