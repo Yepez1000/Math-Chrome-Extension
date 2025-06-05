@@ -28,7 +28,13 @@ export const IPC_CHANNELS = {
   PLAYIT_API_CHAIN: 'playit-api-chain',
   ACCEPT_EULA: 'accept-eula',
   CLIPBOARD_WRITE: 'clipboard-write',
+  PREPARE_SERVER_FILES: 'prepare-server-files',
+  START_MINECRAFT_SERVER: 'start-minecraft-server',
   GET_DEFAULT_SERVER_DIRECTORY: 'get-default-server-directory',
+  SERVER_OUTPUT: 'server-output',
+  SERVER_ERROR_OUTPUT: 'server-error-output',
+  SERVER_STARTED: 'server-started',
+  DETECT_MINECRAFT_INSTALLATION: 'detect-minecraft-installation',
 } as const; 
 
 export interface SystemInfo {
@@ -41,5 +47,13 @@ export type StatusMessage = {
   message: string
   status: "pending" | "success" | "error"
   id: string // Add unique ID
+}
+
+// Interface for the server configuration passed to main process handlers
+export interface StartServerConfig {
+  serverDirectory: string;
+  serverType: "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit";
+  ram: number;
+  javaPath?: string | null; // Optional Java path
 }
 

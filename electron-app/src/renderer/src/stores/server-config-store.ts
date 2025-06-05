@@ -81,7 +81,7 @@ export const useServerConfigStore = create<ServerConfigState>((set, get) => ({
       set({ currentStep: stepOrder[currentIndex - 1] })
     }
   }
-}))
+})) 
 
 // Fetch default server directory on store initialization if not already set
 async function fetchDefaultServerDirectory() {

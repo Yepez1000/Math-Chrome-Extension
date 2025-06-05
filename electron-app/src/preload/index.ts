@@ -49,6 +49,12 @@ const api: ElectronAPI = {
         IPC_CHANNELS.ACCEPT_EULA,
         // Whitelist channel for getting default server directory
         IPC_CHANNELS.GET_DEFAULT_SERVER_DIRECTORY,
+        // Whitelist channel for preparing server files
+        IPC_CHANNELS.PREPARE_SERVER_FILES,
+        // Whitelist channel for starting the Minecraft server
+        IPC_CHANNELS.START_MINECRAFT_SERVER,
+        // Whitelist channel for detecting Minecraft installation and Java version
+        IPC_CHANNELS.DETECT_MINECRAFT_INSTALLATION,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)
@@ -62,6 +68,11 @@ const api: ElectronAPI = {
         IPC_CHANNELS.TUNNEL_ERROR,
         IPC_CHANNELS.TUNNEL_STATUS,
         IPC_CHANNELS.CLAIM_LINK,
+        // Add channels for server console output
+        IPC_CHANNELS.SERVER_OUTPUT,
+        IPC_CHANNELS.SERVER_ERROR_OUTPUT,
+        // Add channel for server started event
+        IPC_CHANNELS.SERVER_STARTED,
         // Add other on channels as needed
       ] as const
       if ((validOnChannels as ReadonlyArray<string>).includes(channel)) {

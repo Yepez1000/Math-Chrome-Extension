@@ -17,6 +17,13 @@ interface ServerStartupScreenProps {
   onRetry: () => void
 }
 
+// Define a type for the startup steps
+interface StartupStep {
+  message: string;
+  handler: typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS] | "prepareServerFiles" | "startMinecraft"; // Corrected type to include string values from IPC_CHANNELS
+  error: string;
+}
+
 export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreenProps) {
   const { toast } = useToast()
   const config = useServerConfigStore((state) => state.config)
@@ -40,21 +47,24 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   const { setTunnelStatus, setTunnelAddress, setTunnelError, tunnel } = useServerStore()
   const tunnelAddress = tunnel.address
 
+  // State for server console output
+  // const [serverConsoleOutput, setServerConsoleOutput] = useState<string[]>([]);
+
   // Define the startup steps
-  const startupSteps = [
+  const startupSteps: StartupStep[] = [
+    {
+      message: "Preparing server files...",
+      handler: IPC_CHANNELS.PREPARE_SERVER_FILES,
+      error: "Failed to prepare server files. Please check disk space and permissions.",
+    },
     {
       message: "Accepting Minecraft EULA...",
       handler: IPC_CHANNELS.ACCEPT_EULA,
       error: "Failed to accept the Minecraft EULA. Please check file permissions.",
     },
     {
-      message: "Preparing server files...",
-      handler: "prepareServerFiles",
-      error: "Failed to prepare server files. Please check disk space and permissions.",
-    },
-    {
       message: `Starting ${config.isModded ? "modded" : "vanilla"} Minecraft server...`,
-      handler: "startMinecraft",
+      handler: IPC_CHANNELS.START_MINECRAFT_SERVER,
       error: "Failed to start the Minecraft server. Please check your server configuration.",
     },
     {
@@ -63,6 +73,69 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       error: "Failed to set up the Playit.gg tunnel. Please check your API key and network connection.",
     },
   ]
+
+  // Helper functions for each step
+  const handleTunnelStep = async () => {
+    const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_TUNNEL, { 
+      serverPort: 25565 // Default Minecraft port
+    })
+    if (result.success && result.data) {
+      const { assignedDomain, staticIp4, portStart } = result.data
+      if (assignedDomain) {
+        setDnsAddress(`${assignedDomain}:${portStart || 25565}`)
+      } else if (staticIp4) {
+        setDnsAddress(`${staticIp4}:${portStart || 25565}`)
+      } else {
+        console.warn("Tunnel created but neither domain nor static IP returned.", result.data)
+        setDnsAddress("Address not available")
+      }
+    }
+    return result; // Return result for error checking in executeStep
+  };
+
+  const handleEulaStep = async () => {
+    // Call the real EULA acceptance handler
+    const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.ACCEPT_EULA, config.serverDirectory)
+    return result; // Return result for error checking in executeStep
+  };
+
+  const handlePrepareFilesStep = async () => {
+    // Call the real prepare server files handler
+    const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.PREPARE_SERVER_FILES, { 
+      serverDirectory: config.serverDirectory, 
+      serverType: config.serverType,
+      ramGB: config.ram 
+    })
+    return result; // Return result for error checking in executeStep
+  };
+
+  const handleStartServerStep = async () => {
+    // Call the real start Minecraft server handler
+    const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_MINECRAFT_SERVER, {
+      serverDirectory: config.serverDirectory,
+      serverType: config.serverType,
+      ram: config.ram,
+      javaPath: config.javaPath,
+    });
+    return result; // Return result for error checking in executeStep
+  };
+
+  // Unified step handling function
+  const handleStep = async (step: StartupStep) => {
+    switch (step.handler) {
+      case IPC_CHANNELS.START_TUNNEL:
+        return handleTunnelStep();
+      case IPC_CHANNELS.ACCEPT_EULA:
+        return handleEulaStep();
+      case IPC_CHANNELS.PREPARE_SERVER_FILES:
+        return handlePrepareFilesStep();
+      case IPC_CHANNELS.START_MINECRAFT_SERVER:
+        return handleStartServerStep();
+      default:
+        // Use the global mock function for any handlers not explicitly defined here
+        return globalMockIpcCalls(step.handler as string);
+    }
+  };
 
   // Function to execute a step
   const executeStep = useCallback(async (stepIndex: number) => {
@@ -75,49 +148,25 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     addStatusMessage({ message: step.message, status: "pending" })
 
     try {
-      let result: any
+      // Use the unified handleStep function
+      const result = await handleStep(step);
 
-      // Handle different steps
-      switch (step.handler) {
-        case IPC_CHANNELS.START_TUNNEL:
-          const apiKey = "YOUR_PLAYIT_API_KEY_HERE" // Placeholder
-          const serverPort = 25565 // Hardcoded for now
-          result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_TUNNEL, { apiKey, serverPort })
-          if (!result.success) {
-            throw new Error(result.message)
-          }
-          if (result.data) {
-            const { assignedDomain, staticIp4, portStart } = result.data
-            if (assignedDomain) {
-              setDnsAddress(`${assignedDomain}:${portStart || 25565}`)
-            } else if (staticIp4) {
-              setDnsAddress(`${staticIp4}:${portStart || 25565}`)
-            } else {
-              console.warn("Tunnel created but neither domain nor static IP returned.", result.data)
-              setDnsAddress("Address not available")
-            }
-          } else {
-            console.warn("Tunnel creation reported success but missing data.", result)
-            setDnsAddress("Address not available")
-          }
-          break
-        case IPC_CHANNELS.ACCEPT_EULA:
-          // Call the real EULA acceptance handler
-          result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.ACCEPT_EULA, config.serverDirectory)
-          if (!result.success) {
-            throw new Error(result.message || "Failed to accept EULA")
-          }
-          break
-        default:
-          result = await mockIpcCalls(step.handler)
+      // Check the success property returned by the handler
+      if (!result.success) {
+        throw new Error(result.message || `Step failed for handler: ${step.handler}`);
       }
 
-      updateLastStatusMessage("success")
+      // If no error was thrown, the step was successful
+      updateLastStatusMessage("success");
 
-      setCurrentStep(stepIndex + 1)
-      setTimeout(() => executeStep(stepIndex + 1), 0)
+      setCurrentStep(stepIndex + 1);
+      // Only proceed to the next step if the current one was successful
+      setTimeout(() => executeStep(stepIndex + 1), 0);
+
     } catch (error: any) {
-      updateLastStatusMessage("error")
+      // If an error was caught (either from throw or IPC result.success === false)
+      console.error('Error caught during step execution:', error);
+      updateLastStatusMessage("error");
 
       addStatusMessage({
         message: `Error: ${step.error}${error instanceof Error && error.message ? ` (${error.message})` : ""}`,
@@ -126,10 +175,11 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
       setIsError(true)
     }
-  }, [startupSteps, addStatusMessage, updateLastStatusMessage, setCurrentStep, setIsComplete, setIsError, setDnsAddress])
+  }, [startupSteps, addStatusMessage, updateLastStatusMessage, setCurrentStep, setIsComplete, setIsError, setDnsAddress, config.serverDirectory, config.serverType, config.ram, config.javaPath]); // Added config dependencies
 
-  // Mock IPC calls with artificial delays
-  const mockIpcCalls = async (handler: string) => {
+  // Keep the mock IPC calls for other steps until they are implemented
+  // Renamed to avoid conflict if mockIpcCalls is defined within the component function
+  const globalMockIpcCalls = async (handler: string) => {
     await new Promise((resolve) => setTimeout(resolve, 500))
     // Simulate success for mock steps
     console.log(`Mock handler called for: ${handler}`)
@@ -141,26 +191,29 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     handleTunnelStatus: (data: { status: string; address?: string }) => {
       console.log("Tunnel Status Update:", data)
 
-      // Map the incoming status string to a valid TunnelStatus type (simplified)
-      let mappedStatus: TunnelStatus = "starting"; // Default to starting for in-progress messages
+      // Map the incoming status string to a valid TunnelStatus type
+      let mappedStatus: TunnelStatus = "starting"; // Default to starting
 
-      if (data.status.startsWith("Error:") || data.status === "Error" || data.status === "Disconnected") {
+      if (data.status === "Error" || data.status.includes("Error:")) {
         mappedStatus = "error";
-      } else if (data.status.startsWith("Connected (")) {
-        mappedStatus = "running";
-      } else if (data.status.startsWith("Retrying Playit.gg setup")) {
-        mappedStatus = "starting"; // Explicitly map retry to starting
-      } else {
-        // Any other status message indicates an ongoing startup process
+      } else if (data.status === "Setting Tunnel" || data.status === "Getting Tunnel Details") {
         mappedStatus = "starting";
+      } else if (data.status === "Connected" || data.status.includes("Tunnel created")) {
+        mappedStatus = "running";
+      } else if (data.status === "Disconnected") {
+        mappedStatus = "error";
       }
 
       // Update the detailed tunnel status in the startup store
-      // Always store the exact message from main process for display
-      setPlayitTunnelStatusDetails(data.status); 
+      setPlayitTunnelStatusDetails(data.status);
 
       // Update overall tunnel status in useServerStore
-      setTunnelStatus(mappedStatus); // Use the mapped status for the main server store
+      setTunnelStatus(mappedStatus);
+
+      // If we have an address, update it
+      if (data.address) {
+        setTunnelAddress(data.address);
+      }
     },
     handleTunnelAddress: (_event: any, data: any) => {
       console.log("Tunnel Address:", data)
@@ -171,6 +224,15 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       setTunnelError(data.message)
       addStatusMessage({ message: `Tunnel Runtime Error: ${data.message}`, status: "error" })
     },
+    // Handler for server stdout
+    // handleServerOutput: (data: string) => {
+    //   setServerConsoleOutput(prev => [...prev, data]);
+    // },
+    // Handler for server stderr
+    // handleServerErrorOutput: (data: string) => {
+    //   // You might want to format error output differently in the UI
+    //   setServerConsoleOutput(prev => [...prev, `ERROR: ${data}`]);
+    // },
   })
 
   // Start the sequence when component mounts and set up listeners once
@@ -180,17 +242,23 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       executeStep(0)
       hasRun.current = true
     }
-    
+
     // Add listeners for tunnel status updates from playitHandlers
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_STATUS, listeners.current.handleTunnelStatus)
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ADDRESS, listeners.current.handleTunnelAddress)
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, listeners.current.handleTunnelError)
+
+    // Add listeners for server console output
+    // window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_OUTPUT, listeners.current.handleServerOutput);
+    // window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_ERROR_OUTPUT, listeners.current.handleServerErrorOutput);
 
     // Cleanup listeners on unmount
     return () => {
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_STATUS, listeners.current.handleTunnelStatus)
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_ADDRESS, listeners.current.handleTunnelAddress)
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_ERROR, listeners.current.handleTunnelError)
+      // window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_OUTPUT, listeners.current.handleServerOutput);
+      // window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_ERROR_OUTPUT, listeners.current.handleServerErrorOutput);
     }
   }, []) // Remove executeStep from dependencies since it's stable
 
@@ -349,6 +417,27 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
               </div>
             </CardContent>
           </Card>
+
+          {/* Server Console Output Section (Commented Out) */}
+          {/*
+          <Card className="border-cool-gray/30 bg-night">
+            <CardContent className="p-6">
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-linen mb-4">Server Console Output</h3>
+                <div className="bg-night-sky text-cool-gray p-4 rounded-md h-64 overflow-y-auto font-mono text-sm">
+                  {serverConsoleOutput.length > 0 ? (
+                    serverConsoleOutput.map((line, index) => (
+                      <p key={index} className="whitespace-pre-wrap break-words">{line}</p>
+                    ))
+                  ) : (
+                    <p>Waiting for server output...</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          */}
+
         </div>
       </CardContent>
     </Card>
