@@ -14,25 +14,45 @@ interface ServerStartupState {
   currentStep: number
   isComplete: boolean
   isError: boolean
+  error: string | null
   dnsAddress: string | null
+  playitTunnelStatusDetails: string | null
   addStatusMessage: (message: Omit<StatusMessage, 'id'>) => void
   updateLastStatusMessage: (status: StatusMessage["status"]) => void
   setCurrentStep: (step: number) => void
   setIsComplete: (isComplete: boolean) => void
   setIsError: (isError: boolean) => void
+  setError: (error: string | null) => void
   setDnsAddress: (address: string | null) => void
   reset: () => void
+  setPlayitTunnelStatusDetails: (details: string | null) => void
 }
+
+interface ServerStartupActions {
+  addStatusMessage: (message: StatusMessage) => void
+  updateLastStatusMessage: (status: StatusMessage["status"]) => void
+  setCurrentStep: (step: number) => void
+  setIsComplete: (isComplete: boolean) => void
+  setIsError: (isError: boolean) => void
+  setError: (error: string | null) => void
+  setDnsAddress: (address: string | null) => void
+  reset: () => void
+  setPlayitTunnelStatusDetails: (details: string | null) => void
+}
+
+type ServerStartupStore = ServerStartupState & ServerStartupActions;
 
 const initialState = {
   statusMessages: [],
   currentStep: 0,
   isComplete: false,
   isError: false,
+  error: null,
   dnsAddress: null,
+  playitTunnelStatusDetails: null,
 }
 
-export const useServerStartupStore = create<ServerStartupState>((set) => ({
+export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   ...initialState,
 
   addStatusMessage: (message) =>
@@ -57,7 +77,13 @@ export const useServerStartupStore = create<ServerStartupState>((set) => ({
   setCurrentStep: (step) => set({ currentStep: step }),
   setIsComplete: (isComplete) => set({ isComplete }),
   setIsError: (isError) => set({ isError }),
+  setError: (error) => set({ error }),
   setDnsAddress: (address) => set({ dnsAddress: address }),
 
   reset: () => set(initialState),
+
+  setPlayitTunnelStatusDetails: (details) => set({ playitTunnelStatusDetails: details }),
+
+  // Note: The executeStartupSequence action is defined and used in the component for now.
+  // IPC listeners will be set up in the component and call store actions to update state.
 })) 

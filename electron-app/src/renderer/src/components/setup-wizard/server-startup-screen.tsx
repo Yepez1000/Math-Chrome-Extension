@@ -9,7 +9,7 @@ import { useToast } from "@renderer/hooks/use-toast"
 import { useServerConfigStore } from "@/stores/server-config-store"
 import { useServerStartupStore } from "@/stores/server-startup-store"
 import { IPC_CHANNELS, StatusMessage as StatusMessageType } from "@shared/types"
-import { useServerStore } from "@/lib/store"
+import { useServerStore, TunnelStatus } from "@/lib/store"
 import React from "react"
 
 interface ServerStartupScreenProps {
@@ -33,6 +33,8 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     setDnsAddress,
     reset,
     dnsAddress,
+    playitTunnelStatusDetails,
+    setPlayitTunnelStatusDetails,
   } = useServerStartupStore()
 
   const { setTunnelStatus, setTunnelAddress, setTunnelError, tunnel } = useServerStore()
@@ -136,9 +138,29 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
   // Use useRef to store listener functions to ensure stability
   const listeners = useRef({
-    handleTunnelStatus: (_event: any, data: any) => {
+    handleTunnelStatus: (data: { status: string; address?: string }) => {
       console.log("Tunnel Status Update:", data)
-      setTunnelStatus(data.status === "Error" || data.status === "Disconnected" ? "error" : data.status)
+
+      // Map the incoming status string to a valid TunnelStatus type (simplified)
+      let mappedStatus: TunnelStatus = "starting"; // Default to starting for in-progress messages
+
+      if (data.status.startsWith("Error:") || data.status === "Error" || data.status === "Disconnected") {
+        mappedStatus = "error";
+      } else if (data.status.startsWith("Connected (")) {
+        mappedStatus = "running";
+      } else if (data.status.startsWith("Retrying Playit.gg setup")) {
+        mappedStatus = "starting"; // Explicitly map retry to starting
+      } else {
+        // Any other status message indicates an ongoing startup process
+        mappedStatus = "starting";
+      }
+
+      // Update the detailed tunnel status in the startup store
+      // Always store the exact message from main process for display
+      setPlayitTunnelStatusDetails(data.status); 
+
+      // Update overall tunnel status in useServerStore
+      setTunnelStatus(mappedStatus); // Use the mapped status for the main server store
     },
     handleTunnelAddress: (_event: any, data: any) => {
       console.log("Tunnel Address:", data)
@@ -254,6 +276,21 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     </motion.div>
   )
 
+  // Determine the text for the final status/progress line
+  const renderProgressText = () => {
+    if (currentStep === 3 && playitTunnelStatusDetails && !isComplete && !isError) {
+       return `${playitTunnelStatusDetails} (Step 4/4)`;
+    } else if (!isComplete && !isError && currentStep < startupSteps.length) {
+      return `Processing... (Step ${currentStep + 1}/${startupSteps.length})`;
+    } else if (isComplete && !isError) {
+        return null;
+    } else if (isError) {
+        const errorFromStore = useServerStartupStore.getState().error;
+        return `Setup Failed: ${errorFromStore || 'An unknown error occurred.'}`;
+    }
+    return null;
+  };
+
   return (
     <Card className="w-full bg-space-cadet border-cool-gray/30 shadow-xl">
       <CardHeader>
@@ -283,32 +320,32 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
                     ))}
                   </AnimatePresence>
 
-                  {!isComplete && !isError && currentStep < startupSteps.length && (
+                  {renderProgressText() && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+                        className="text-cool-gray text-sm italic mt-2"
+                      >
+                        {renderProgressText()}
+                      </motion.div>
+                  )}
+
+                  {isComplete && dnsAddress && (
                     <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: [0.5, 1, 0.5] }}
-                      transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                      className="text-cool-gray text-sm italic mt-2"
+                      key="server-address-container"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      transition={{ duration: 0.5, delay: 0.5 }}
+                      layout
+                      className="mt-6 pt-4 border-t border-cool-gray/20"
                     >
-                      Processing... (Step {currentStep + 1}/{startupSteps.length})
+                      <ServerAddress address={dnsAddress} onCopy={copyToClipboard} />
                     </motion.div>
                   )}
+
+                  {isError && <ErrorState onRetry={handleRetry} />}
                 </div>
-
-                {isComplete && dnsAddress && (
-                  <motion.div
-                    key="server-address-container"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    transition={{ duration: 0.5, delay: 0.5 }}
-                    layout
-                    className="mt-6 pt-4 border-t border-cool-gray/20"
-                  >
-                    <ServerAddress address={dnsAddress} onCopy={copyToClipboard} />
-                  </motion.div>
-                )}
-
-                {isError && <ErrorState onRetry={handleRetry} />}
               </div>
             </CardContent>
           </Card>
