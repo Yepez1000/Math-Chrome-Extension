@@ -176,7 +176,7 @@ function setupServerProcessListeners(
 }
 
 export function registerMinecraftHandlers() {
-  // Handle detecting Minecraft installation and checking Java version
+  // Handle detecting Java version for Minecraft server
   ipcMain.handle(IPC_CHANNELS.DETECT_MINECRAFT_INSTALLATION, async () => {
     try {
       devLog('Checking Java installations for Minecraft server...');
@@ -262,44 +262,29 @@ export function registerMinecraftHandlers() {
         }
       }
 
-      // Check for .minecraft folder (basic check for now)
-      const minecraftPath = join(process.env.APPDATA || process.env.HOME || '', '.minecraft');
-      let foundMinecraft = false;
-      try {
-        await fs.access(minecraftPath);
-        foundMinecraft = true;
-      } catch {
-        // .minecraft not found in default location
-      }
-
-      if (!foundMinecraft) {
-         return { foundMinecraft: false, javaStatus: 'not_checked', javaVersion: null, minecraftPath: null };
-      }
-
-      // Determine the Java version to report in the UI (best supported or highest found)
-      const reportedJavaVersion = bestJavaVersion || 'none';
-
       if (bestMajorVersion < 17) {
-        return { foundMinecraft: true, minecraftPath: minecraftPath, javaStatus: 'unsupported', javaVersion: reportedJavaVersion };
+        return { 
+          javaStatus: 'unsupported', 
+          javaVersion: bestJavaVersion || 'none',
+          message: 'Java 17 or higher is required for the Minecraft server. Please install Java 17 or higher from adoptium.net'
+        };
       } else {
         devLog(`Using Java ${bestJavaVersion} from ${bestJavaPath}`);
         return { 
-          foundMinecraft: true, 
-          minecraftPath: minecraftPath, 
           javaStatus: 'supported', 
           javaVersion: bestJavaVersion,
-          javaPath: bestJavaPath 
+          javaPath: bestJavaPath,
+          message: 'Compatible Java version found!'
         };
       }
 
     } catch (error) {
-      devError('Failed during Minecraft/Java detection:', error);
+      devError('Failed during Java detection:', error);
       return { 
-        foundMinecraft: false,
         javaStatus: 'error',
         javaVersion: null,
-        minecraftPath: null,
-        error: error instanceof Error ? error.message : 'Unknown detection error'
+        error: error instanceof Error ? error.message : 'Unknown detection error',
+        message: 'Error checking Java installation'
       };
     }
   });

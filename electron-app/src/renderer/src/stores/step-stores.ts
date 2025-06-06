@@ -3,18 +3,14 @@ import { create } from 'zustand'
 // Detect Minecraft Step Store
 interface DetectMinecraftState {
   isDetecting: boolean
-  isFound: boolean
   setIsDetecting: (isDetecting: boolean) => void
-  setIsFound: (isFound: boolean) => void
   reset: () => void
 }
 
 export const useDetectMinecraftStore = create<DetectMinecraftState>((set) => ({
   isDetecting: true,
-  isFound: false,
   setIsDetecting: (isDetecting) => set({ isDetecting }),
-  setIsFound: (isFound) => set({ isFound }),
-  reset: () => set({ isDetecting: true, isFound: false }),
+  reset: () => set({ isDetecting: true }),
 }))
 
 // Flavor Selection Step Store
