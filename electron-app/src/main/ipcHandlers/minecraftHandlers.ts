@@ -447,8 +447,10 @@ eula=true
 
           devLog(`Attempting to download vanilla server.jar to ${serverJarPath}`);
 
-          // Download the server.jar
-          const response = await fetch('https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar');
+          // Download the server.jar using the hardcoded URL
+          const hardcodedServerDownloadUrl = 'https://piston-data.mojang.com/v1/objects/e6ec2f64e6080b9b5d9b471b291c33cc7f509733/server.jar'; // Hardcoded URL for 1.21.5
+          devLog(`Downloading vanilla server.jar from hardcoded URL: ${hardcodedServerDownloadUrl}`);
+          const response = await fetch(hardcodedServerDownloadUrl);
           if (!response.ok) throw new Error(`Failed to download server.jar: ${response.statusText}`);
           
           const buffer = await response.arrayBuffer();
@@ -466,7 +468,9 @@ eula=true
             'spawn-protection=16',
             'view-distance=10',
             'simulation-distance=10',
-            'motd=Welcome to EasyCraft Server!'
+            'motd=Welcome to EasyCraft Server!',
+            'enable-status=true', // Prevent server from pausing when empty
+            'pause-when-empty-seconds=0'
           ].join('\n');
           await fs.writeFile(serverPropertiesPath, defaultProperties);
           devLog(`Created basic server.properties at ${serverPropertiesPath}`);
