@@ -55,12 +55,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     {
       message: "Preparing server files...",
       handler: IPC_CHANNELS.PREPARE_SERVER_FILES,
-      error: "Failed to prepare server files. Please check disk space and permissions.",
-    },
-    {
-      message: "Accepting Minecraft EULA...",
-      handler: IPC_CHANNELS.ACCEPT_EULA,
-      error: "Failed to accept the Minecraft EULA. Please check file permissions.",
+      error: "Failed to prepare server files or accept EULA. Please check disk space and permissions.",
     },
     {
       message: `Starting ${config.isModded ? "modded" : "vanilla"} Minecraft server...`,
@@ -80,11 +75,11 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       serverPort: 25565 // Default Minecraft port
     })
     if (result.success && result.data) {
-      const { assignedDomain, staticIp4, portStart } = result.data
+      const { assignedDomain, staticIp4 } = result.data
       if (assignedDomain) {
-        setDnsAddress(`${assignedDomain}:${portStart || 25565}`)
+        setDnsAddress(assignedDomain) // Remove port number
       } else if (staticIp4) {
-        setDnsAddress(`${staticIp4}:${portStart || 25565}`)
+        setDnsAddress(staticIp4) // Remove port number
       } else {
         console.warn("Tunnel created but neither domain nor static IP returned.", result.data)
         setDnsAddress("Address not available")

@@ -304,56 +304,6 @@ export function registerMinecraftHandlers() {
     }
   });
 
-  // Handle EULA acceptance
-  ipcMain.handle(IPC_CHANNELS.ACCEPT_EULA, async (_event, serverDirectory: string) => {
-    try {
-      // Validate server directory
-      if (!serverDirectory || typeof serverDirectory !== 'string') {
-        throw new Error('Invalid server directory provided');
-      }
-
-      // Path to eula.txt
-      const eulaPath = join(serverDirectory, 'eula.txt');
-
-      // Check if eula.txt already exists
-      try {
-        await fs.access(eulaPath);
-        devLog('EULA file already exists, checking content...');
-        
-        // Read existing content
-        const content = await fs.readFile(eulaPath, 'utf-8');
-        if (content.includes('eula=true')) {
-          devLog('EULA already accepted');
-          return { success: true, message: 'EULA already accepted' };
-        }
-      } catch (error) {
-        // File doesn't exist, we'll create it
-        devLog('EULA file does not exist, creating new one...');
-      }
-
-      // Create or update eula.txt with acceptance
-      const eulaContent = `#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecraft_eula).
-#Generated for Minecraft Server
-eula=true
-`;
-      
-      await fs.writeFile(eulaPath, eulaContent, 'utf-8');
-      devLog('EULA accepted successfully');
-
-      return { 
-        success: true, 
-        message: 'EULA accepted successfully' 
-      };
-
-    } catch (error) {
-      devError('Failed to accept EULA:', error);
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Failed to accept EULA' 
-      };
-    }
-  });
-
   // Handle preparing server files
   ipcMain.handle(IPC_CHANNELS.PREPARE_SERVER_FILES, async (_event, { serverDirectory, serverType, ramGB }: { serverDirectory: string; serverType: string; ramGB: number }) => {
     try {
@@ -445,6 +395,15 @@ eula=true
           }
           const serverPropertiesPath = join(serverDirectory, 'server.properties');
 
+          // Clean up existing world directory if it exists
+          const worldPath = join(serverDirectory, 'world');
+          try {
+            await fs.rm(worldPath, { recursive: true, force: true });
+            devLog(`Cleaned up existing world directory at ${worldPath}`);
+          } catch (error) {
+            devLog(`Could not clean up world directory: ${error instanceof Error ? error.message : String(error)}`);
+          }
+
           devLog(`Attempting to download vanilla server.jar to ${serverJarPath}`);
 
           // Download the server.jar using the hardcoded URL
@@ -460,11 +419,14 @@ eula=true
           // Create basic server.properties
           const defaultProperties = [
             'server-port=25565',
+            'server-ip=0.0.0.0', // Explicitly bind to all network interfaces
             'gamemode=survival',
             'difficulty=easy',
             'max-players=20',
             'online-mode=true',
             'white-list=false',
+            'enforce-whitelist=false', // Don't enforce whitelist by default
+            'blacklist-enabled=false', // Don't enable blacklist by default
             'spawn-protection=16',
             'view-distance=10',
             'simulation-distance=10',
@@ -475,10 +437,11 @@ eula=true
           await fs.writeFile(serverPropertiesPath, defaultProperties);
           devLog(`Created basic server.properties at ${serverPropertiesPath}`);
 
-          // Create eula.txt
+          // Create eula.txt (Moved from ACCEPT_EULA handler)
           const eulaPath = join(serverDirectory, 'eula.txt');
-          await fs.writeFile(eulaPath, 'eula=true\n');
-          devLog(`Created eula.txt at ${eulaPath}`);
+          const eulaContent = `#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecraft_eula).\n#Generated for Minecraft Server\neula=true\n`;
+          await fs.writeFile(eulaPath, eulaContent, 'utf-8');
+          devLog(`Created or updated eula.txt at ${eulaPath} with acceptance.`);
 
           // Validate RAM allocation
           const maxRamMB = Math.min(ramGB * 1024, 16384); // Cap at 16GB
@@ -491,6 +454,9 @@ eula=true
 
           // Clean up any existing server process before starting a new one
           cleanupMinecraftServerProcess();
+
+          // Log a message about potential connection issues
+          devLog('Note: If players cannot connect, check Windows Firewall settings for port 25565');
 
           // Attempt to delete the latest.log file to clear potential locks
           const latestLogPath = join(serverDirectory, 'logs', 'latest.log');

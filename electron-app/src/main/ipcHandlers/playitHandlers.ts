@@ -377,7 +377,34 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
              }
 
              const tunnelResult = await createAndPollForTunnelDetails(_event, extractedAgentId);
-             return tunnelResult;
+
+             // Ensure the playit process is running to maintain the tunnel after successfully getting details
+             devLog('Detected existing agent and polled for tunnel details. Ensuring playit process is running.');
+             cleanupPlayitProcess(); // Clean up any potentially lingering process
+             // Re-spawn the playit binary to keep the tunnel alive
+             playitProcess = spawn(binaryPath, [], { // Use the binaryPath obtained earlier
+                detached: false,
+                windowsHide: false,
+                stdio: ['ignore', 'pipe', 'pipe'], // Use ignore for stdin, pipe for stdout/stderr
+                shell: false,
+                env: { 
+                  ...process.env, 
+                  FORCE_COLOR: '0', // Disable color output from Playit agent
+                  TERM: 'dumb',
+                  CLICOLOR: '0',
+                  NO_COLOR: '1'
+                }
+              });
+
+             if (!playitProcess) {
+                 devError('Failed to re-spawn Playit process after detecting existing agent.');
+                 throw new Error('Failed to keep Playit process running after setup.');
+             }
+
+             // Note: Listeners are not typically needed here as the agent process handles tunnel upkeep.
+
+            shouldBreakRetryLoop = true; // Success, exit the full retry loop
+            return tunnelResult;
          } else {
              console.warn('Agent ID not obtained in existing agent flow after initial attempt. Triggering full retry.');
              cleanupPlayitProcess();
