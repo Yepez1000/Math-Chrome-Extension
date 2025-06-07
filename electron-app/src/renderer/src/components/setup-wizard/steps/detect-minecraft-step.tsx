@@ -27,7 +27,7 @@ export function DetectMinecraftStep({ config, updateConfig, onComplete }: Detect
 
       try {
         const result = await window.electronAPI.ipcRenderer.invoke(
-          IPC_CHANNELS.DETECT_MINECRAFT_INSTALLATION
+          IPC_CHANNELS.JAVA_DETECT_VERSION
         )
 
         if (result.javaStatus === 'supported') {

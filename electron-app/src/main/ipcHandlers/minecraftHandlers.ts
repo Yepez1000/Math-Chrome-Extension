@@ -77,7 +77,7 @@ function setupServerProcessListeners(
     const message = data.toString();
     output += message; // Accumulate output
     devLog(`Server stdout: ${message}`);
-    event.sender.send(IPC_CHANNELS.SERVER_OUTPUT, message);
+    event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, message);
 
     // Check for specific fatal error patterns in stdout
     // Exclude log file deletion errors as they're not fatal
@@ -90,7 +90,7 @@ function setupServerProcessListeners(
     ) {
       const errorMsg = `Server startup failed (stdout): ${message.substring(0, 200)}...`;
       devError('Detected potential fatal server startup error in stdout. Signalling failure and attempting to terminate process.', errorMsg);
-      event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: false, error: errorMsg });
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
       // Attempt to kill the process to prevent hanging
       if (minecraftServerProcess && !minecraftServerProcess.killed) {
         minecraftServerProcess.kill();
@@ -102,7 +102,7 @@ function setupServerProcessListeners(
     // Check for successful startup (Vanilla "Done" message)
     if (serverType === 'vanilla' && message.includes('Done')) {
       devLog('Vanilla server startup detected!');
-      event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: true, message: 'Server started successfully!' });
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: true, message: 'Server started successfully!' });
       // Resolve the promise to signal success to the renderer's invoke call
       resolveStartupPromise?.();
     }
@@ -112,7 +112,7 @@ function setupServerProcessListeners(
     const message = data.toString();
     errorOutput += message; // Accumulate error output
     devError(`Server stderr: ${message}`);
-    event.sender.send(IPC_CHANNELS.SERVER_ERROR_OUTPUT, message);
+    event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, message);
 
     // Check for specific fatal error patterns in stderr
     // Exclude log file deletion errors as they're not fatal
@@ -125,7 +125,7 @@ function setupServerProcessListeners(
     ) {
       const errorMsg = `Server startup failed (stderr): ${message.substring(0, 200)}...`;
       devError('Detected potential fatal server startup error in stderr. Signalling failure and attempting to terminate process.', errorMsg);
-      event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: false, error: errorMsg });
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
       // Attempt to kill the process to prevent hanging
       if (minecraftServerProcess && !minecraftServerProcess.killed) {
         minecraftServerProcess.kill();
@@ -144,12 +144,12 @@ function setupServerProcessListeners(
     if (rejectStartupPromise && serverStartupPromise && !('hasOwnProperty' in serverStartupPromise && (serverStartupPromise.hasOwnProperty('_fulfilled') || serverStartupPromise.hasOwnProperty('_rejected')))) {
        const errorMsg = `Server process exited unexpectedly with code ${code}. Check logs for details.`;
        devError(errorMsg);
-       event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: false, error: errorMsg });
+       event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
        // Reject the promise to signal failure to the renderer's invoke call
        rejectStartupPromise(new Error(errorMsg));
     } else if (code !== 0) {
         // If the promise *was* resolved but the code is non-zero, it might be an issue,
-        // but the SERVER_STARTED success has already been sent.
+        // but the SERVER_STATUS_UPDATE success has already been sent.
         devError(`Server process closed with non-zero code ${code} AFTER startup signal.`);
     }
   });
@@ -161,7 +161,7 @@ function setupServerProcessListeners(
     if (rejectStartupPromise && serverStartupPromise && !('hasOwnProperty' in serverStartupPromise && (serverStartupPromise.hasOwnProperty('_fulfilled') || serverStartupPromise.hasOwnProperty('_rejected')))) {
        const timeoutErrorMsg = 'Server startup timed out.';
        devError(timeoutErrorMsg);
-       event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: false, error: timeoutErrorMsg });
+       event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: timeoutErrorMsg });
        // Attempt to kill the process
        if (minecraftServerProcess && !minecraftServerProcess.killed) {
            minecraftServerProcess.kill();
@@ -176,121 +176,8 @@ function setupServerProcessListeners(
 }
 
 export function registerMinecraftHandlers() {
-  // Handle detecting Java version for Minecraft server
-  ipcMain.handle(IPC_CHANNELS.DETECT_MINECRAFT_INSTALLATION, async () => {
-    try {
-      devLog('Checking Java installations for Minecraft server...');
-      devLog('Minecraft server requires Java 17 or higher');
-
-      // First try to find Java installations
-      const findJava = async () => {
-        const javaPaths: string[] = [];
-        
-        // Common Java installation paths
-        const commonPaths = [
-          'C:\\Program Files\\Eclipse Adoptium',
-          'C:\\Program Files\\Java',
-          'C:\\Program Files (x86)\\Java',
-          process.env.JAVA_HOME,
-          process.env.PATH?.split(';').filter(p => p.includes('java') || p.includes('jdk'))
-        ].flat().filter(Boolean) as string[];
-
-        // Search for java.exe in common paths
-        for (const basePath of commonPaths) {
-          try {
-            const entries = await fs.readdir(basePath, { withFileTypes: true });
-            for (const entry of entries) {
-              if (entry.isDirectory()) {
-                const javaPath = join(basePath, entry.name, 'bin', 'java.exe');
-                try {
-                  await fs.access(javaPath);
-                  javaPaths.push(javaPath);
-                } catch {
-                  // Ignore if java.exe not found in this directory
-                }
-              }
-            }
-          } catch {
-            // Ignore if directory doesn't exist or can't be read
-          }
-        }
-
-        // Also check PATH for java
-        javaPaths.push('java');
-
-        return javaPaths;
-      };
-
-      const javaPaths = await findJava();
-      let bestJavaVersion = '';
-      let bestJavaPath = '';
-      let bestMajorVersion = 0;
-      let foundVersions: { path: string; version: string }[] = [];
-
-      for (const javaPath of javaPaths) {
-        try {
-          const javaVersion = await new Promise<string>((resolve, reject) => {
-            const process = spawn(javaPath, ['-version']);
-            let output = '';
-            process.stderr?.on('data', (data) => {
-              output += data.toString();
-            });
-            process.on('close', () => {
-              const versionMatch = output.match(/version "([^"]+)"/);
-              if (versionMatch) {
-                resolve(versionMatch[1]);
-              } else {
-                reject(new Error('Could not determine Java version'));
-              }
-            });
-          });
-
-          const versionParts = javaVersion.split('.');
-          const majorVersion = parseInt(versionParts[0]);
-          
-          foundVersions.push({ path: javaPath, version: javaVersion });
-          devLog(`Found Java ${javaVersion} at ${javaPath}`);
-          
-          if (majorVersion >= 17 && majorVersion > bestMajorVersion) {
-            bestJavaVersion = javaVersion;
-            bestJavaPath = javaPath;
-            bestMajorVersion = majorVersion;
-          }
-        } catch {
-          // Ignore if this Java installation couldn't be checked
-          continue;
-        }
-      }
-
-      if (bestMajorVersion < 17) {
-        return { 
-          javaStatus: 'unsupported', 
-          javaVersion: bestJavaVersion || 'none',
-          message: 'Java 17 or higher is required for the Minecraft server. Please install Java 17 or higher from adoptium.net'
-        };
-      } else {
-        devLog(`Using Java ${bestJavaVersion} from ${bestJavaPath}`);
-        return { 
-          javaStatus: 'supported', 
-          javaVersion: bestJavaVersion,
-          javaPath: bestJavaPath,
-          message: 'Compatible Java version found!'
-        };
-      }
-
-    } catch (error) {
-      devError('Failed during Java detection:', error);
-      return { 
-        javaStatus: 'error',
-        javaVersion: null,
-        error: error instanceof Error ? error.message : 'Unknown detection error',
-        message: 'Error checking Java installation'
-      };
-    }
-  });
-
   // Handle preparing server files
-  ipcMain.handle(IPC_CHANNELS.PREPARE_SERVER_FILES, async (_event, { serverDirectory, serverType, ramGB, worldPath, importedWorld }: { serverDirectory: string; serverType: string; ramGB: number; worldPath?: string; importedWorld?: boolean }) => {
+  ipcMain.handle(IPC_CHANNELS.SERVER_PREPARE_FILES, async (_event, { serverDirectory, serverType, ramGB, worldPath, importedWorld, javaPath }: { serverDirectory: string; serverType: string; ramGB: number; worldPath?: string; importedWorld?: boolean; javaPath: string }) => {
     try {
       // Validate input
       if (!serverDirectory || typeof serverDirectory !== 'string') {
@@ -302,273 +189,208 @@ export function registerMinecraftHandlers() {
       if (!ramGB || typeof ramGB !== 'number') {
         throw new Error('Invalid RAM amount provided');
       }
+      if (!javaPath || typeof javaPath !== 'string') {
+        throw new Error('Invalid Java path provided');
+      }
 
-      // Check Java version
-      try {
-        devLog('Checking Java installations for Minecraft server...');
-        devLog('Minecraft server requires Java 17 or higher');
+      devLog(`Preparing server files for type: ${serverType} in ${serverDirectory}`);
 
-        // Check for Java 17+ installation
-        const commonJavaPaths = [
-          'C:\\Program Files\\Eclipse Adoptium',
-          'C:\\Program Files\\Java',
-          'C:\\Program Files (x86)\\Java',
-          process.env.JAVA_HOME || '',
-          process.env.PROGRAMFILES || '',
-          process.env['PROGRAMFILES(X86)'] || ''
-        ].filter(Boolean);
+      // Ensure the server directory exists
+      await fs.mkdir(serverDirectory, { recursive: true });
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Creating directories' });
 
-        let bestJavaVersion: string | null = null;
-        let bestJavaPath: string | null = null;
-        let bestMajorVersion = 0;
-
-        for (const basePath of commonJavaPaths) {
-          try {
-            const entries = await fs.readdir(basePath, { withFileTypes: true });
-            for (const entry of entries) {
-              if (entry.isDirectory() && entry.name.toLowerCase().includes('jdk')) {
-                const javaPath = join(basePath, entry.name, 'bin', 'java.exe');
-                try {
-                  await fs.access(javaPath);
-                  const { stderr } = await execAsync(`"${javaPath}" -version`);
-                  const versionMatch = stderr.match(/version "([^"]+)"/);
-                  if (versionMatch) {
-                    const version = versionMatch[1];
-                    const majorVersion = parseInt(version.split('.')[0]);
-                    if (majorVersion >= 17 && majorVersion > bestMajorVersion) {
-                      bestMajorVersion = majorVersion;
-                      bestJavaVersion = version;
-                      bestJavaPath = javaPath;
-                    }
-                  }
-                } catch (error) {
-                  // Skip if java.exe not found or version check fails
-                  continue;
-                }
-              }
-            }
-          } catch (error) {
-            // Skip if directory not found or not accessible
-            continue;
-          }
+      if (serverType === 'vanilla') {
+        const serverJarPath = join(serverDirectory, 'server.jar');
+        if (!serverJarPath) {
+          throw new Error('Failed to construct server jar path');
         }
+        const serverPropertiesPath = join(serverDirectory, 'server.properties');
 
-        if (bestMajorVersion < 17) {
-          throw new Error(
-            `Minecraft server requires Java 17 or higher.\n` +
-            `Please install Java 17 or higher from https://adoptium.net/`
-          );
-        }
+        // Handle world directory based on whether a world was imported
+        const serverWorldPath = join(serverDirectory, 'world');
+        if (importedWorld && worldPath) {
+          // Normalize paths for comparison to avoid issues with different path separators or trailing slashes
+          const normalizedWorldPath = worldPath.endsWith('/') || worldPath.endsWith('\\') ? worldPath.slice(0, -1) : worldPath;
+          const normalizedServerWorldPath = serverWorldPath.endsWith('/') || serverWorldPath.endsWith('\\') ? serverWorldPath.slice(0, -1) : serverWorldPath;
 
-        devLog(`Using Java ${bestJavaVersion} from ${bestJavaPath}`);
-
-        // Store the best Java path for later use
-        const javaExecutable = bestJavaPath;
-        if (!javaExecutable) {
-          throw new Error('No valid Java executable found');
-        }
-
-        devLog(`Preparing server files for type: ${serverType} in ${serverDirectory}`);
-
-        // Ensure the server directory exists
-        await fs.mkdir(serverDirectory, { recursive: true });
-
-        if (serverType === 'vanilla') {
-          const serverJarPath = join(serverDirectory, 'server.jar');
-          if (!serverJarPath) {
-            throw new Error('Failed to construct server jar path');
-          }
-          const serverPropertiesPath = join(serverDirectory, 'server.properties');
-
-          // Handle world directory based on whether a world was imported
-          const serverWorldPath = join(serverDirectory, 'world');
-          if (importedWorld && worldPath) {
-            // Normalize paths for comparison to avoid issues with different path separators or trailing slashes
-            const normalizedWorldPath = worldPath.endsWith('/') || worldPath.endsWith('\\') ? worldPath.slice(0, -1) : worldPath;
-            const normalizedServerWorldPath = serverWorldPath.endsWith('/') || serverWorldPath.endsWith('\\') ? serverWorldPath.slice(0, -1) : serverWorldPath;
-
-            if (normalizedWorldPath === normalizedServerWorldPath) {
-              devLog(`World directory already exists at target location: ${serverWorldPath}. Skipping copy operation.`);
-            } else {
-              devLog(`Importing existing world from ${worldPath} to ${serverWorldPath}`);
-              // Ensure the target world directory is clean before copying
-              try {
-                await fs.rm(serverWorldPath, { recursive: true, force: true });
-                devLog(`Cleaned up existing server world directory at ${serverWorldPath} for import.`);
-              } catch (error) {
-                devLog(`Could not clean up server world directory for import: ${error instanceof Error ? error.message : String(error)}`);
-              }
-
-              // Copy the world contents
-              await fs.cp(worldPath, serverWorldPath, { recursive: true });
-              devLog(`Copied world from ${worldPath} to ${serverWorldPath}`);
-            }
+          if (normalizedWorldPath === normalizedServerWorldPath) {
+            devLog(`World directory already exists at target location: ${serverWorldPath}. Skipping copy operation.`);
           } else {
-            // Clean up existing world directory if it exists (for new world generation)
+            devLog(`Importing existing world from ${worldPath} to ${serverWorldPath}`);
+            _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Importing world' });
+            // Ensure the target world directory is clean before copying
             try {
               await fs.rm(serverWorldPath, { recursive: true, force: true });
-              devLog(`Cleaned up existing world directory at ${serverWorldPath} for new world generation.`);
+              devLog(`Cleaned up existing server world directory at ${serverWorldPath} for import.`);
             } catch (error) {
-              devLog(`Could not clean up world directory for new world generation: ${error instanceof Error ? error.message : String(error)}`);
+              devLog(`Could not clean up server world directory for import: ${error instanceof Error ? error.message : String(error)}`);
             }
+
+            // Copy the world contents
+            await fs.cp(worldPath, serverWorldPath, { recursive: true });
+            devLog(`Copied world from ${worldPath} to ${serverWorldPath}`);
           }
-
-          devLog(`Attempting to download vanilla server.jar to ${serverJarPath}`);
-
-          // Download the server.jar using the hardcoded URL
-          const hardcodedServerDownloadUrl = 'https://piston-data.mojang.com/v1/objects/e6ec2f64e6080b9b5d9b471b291c33cc7f509733/server.jar'; // Hardcoded URL for 1.21.5
-          devLog(`Downloading vanilla server.jar from hardcoded URL: ${hardcodedServerDownloadUrl}`);
-          const response = await fetch(hardcodedServerDownloadUrl);
-          if (!response.ok) throw new Error(`Failed to download server.jar: ${response.statusText}`);
-          
-          const buffer = await response.arrayBuffer();
-          await fs.writeFile(serverJarPath, Buffer.from(buffer));
-          devLog(`Downloaded server.jar successfully to ${serverJarPath}`);
-
-          // Create basic server.properties
-          const defaultProperties = [
-            'server-port=25565',
-            'server-ip=0.0.0.0', // Explicitly bind to all network interfaces
-            'gamemode=survival',
-            'difficulty=easy',
-            'max-players=20',
-            'online-mode=true',
-            'white-list=false',
-            'enforce-whitelist=false', // Don't enforce whitelist by default
-            'blacklist-enabled=false', // Don't enable blacklist by default
-            'spawn-protection=16',
-            'view-distance=10',
-            'simulation-distance=10',
-            'motd=Welcome to EasyCraft Server!',
-            'enable-status=true', // Prevent server from pausing when empty
-            'pause-when-empty-seconds=0'
-          ].join('\n');
-          await fs.writeFile(serverPropertiesPath, defaultProperties);
-          devLog(`Created basic server.properties at ${serverPropertiesPath}`);
-
-          // Create eula.txt (Moved from ACCEPT_EULA handler)
-          const eulaPath = join(serverDirectory, 'eula.txt');
-          const eulaContent = `#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecraft_eula).\n#Generated for Minecraft Server\neula=true\n`;
-          await fs.writeFile(eulaPath, eulaContent, 'utf-8');
-          devLog(`Created or updated eula.txt at ${eulaPath} with acceptance.`);
-
-          // Validate RAM allocation
-          const maxRamMB = Math.min(ramGB * 1024, 16384); // Cap at 16GB
-          const minRamMB = Math.min(1024, maxRamMB); // Minimum 1GB or max if lower
-
-          // Start the server to generate world files
-          devLog(`Attempting to start ${serverType} server in ${serverDirectory} with ${maxRamMB}MB RAM.`);
-          const command = `${javaExecutable} -Xmx${maxRamMB}M -Xms${minRamMB}M -jar "${serverJarPath}" --nogui`;
-          devLog(`Starting server with command: ${command}`);
-
-          // Clean up any existing server process before starting a new one
-          cleanupMinecraftServerProcess();
-
-          // Log a message about potential connection issues
-          devLog('Note: If players cannot connect, check Windows Firewall settings for port 25565');
-
-          // Attempt to delete the latest.log file to clear potential locks
-          const latestLogPath = join(serverDirectory, 'logs', 'latest.log');
-          try {
-            await fs.unlink(latestLogPath);
-            devLog(`Successfully deleted ${latestLogPath}`);
-          } catch (error) {
-            // Ignore if the file doesn't exist or cannot be deleted
-            devLog(`Could not delete ${latestLogPath}: ${error instanceof Error ? error.message : String(error)}`);
-          }
-
-          const serverProcess = spawn(javaExecutable, [
-            `-Xmx${maxRamMB}M`,
-            `-Xms${minRamMB}M`,
-            '-jar',
-            serverJarPath,
-            '--nogui'
-          ], {
-            cwd: serverDirectory,
-            stdio: ['pipe', 'pipe', 'pipe']
-          }) as ChildProcessWithoutNullStreams;
-
-          // Check if the process was successfully spawned and streams are available
-          if (!serverProcess || !serverProcess.stdout || !serverProcess.stderr) {
-            devError('Failed to spawn server process or get streams');
-            _event.sender.send(IPC_CHANNELS.SERVER_STARTED, { 
-              success: false, 
-              error: 'Failed to start server process streams are missing' 
-            });
-            // No process to kill, just return
-            return { success: false, message: 'Failed to start server process streams are missing' };
-          }
-
-          // Wait for server to start and generate files
-          await new Promise<void>((resolve, reject) => {
-            let output = '';
-            let errorOutput = '';
-
-            serverProcess.stdout?.on('data', (data) => {
-              const message = data.toString();
-              output += message;
-              devLog(`Server stdout: ${message}`);
-              
-              // Check for successful startup
-              if (message.includes('Done') || message.includes('For help, type "help"')) {
-                resolve();
-              }
-            });
-
-            serverProcess.stderr?.on('data', (data) => {
-              const message = data.toString();
-              errorOutput += message;
-              devError(`Server stderr: ${message}`);
-
-              // Check for specific fatal error patterns to proactively stop the process
-              if (
-                message.includes('FileSystemException') ||
-                message.includes('Failed to start the minecraft server') ||
-                message.includes('Error:')
-              ) {
-                devError('Detected fatal server startup error. Signalling failure and attempting to terminate process.');
-                _event.sender.send(IPC_CHANNELS.SERVER_ERROR_OUTPUT, message);
-                _event.sender.send(IPC_CHANNELS.SERVER_STARTED, { 
-                  success: false, 
-                  error: `Server startup failed: ${message}` 
-                });
-                // Attempt to kill the process to prevent hanging
-                if (minecraftServerProcess && !minecraftServerProcess.killed) {
-                  minecraftServerProcess.kill();
-                }
-              }
-            });
-
-            serverProcess.on('close', (code) => {
-              devLog(`Server process closed with code ${code}`);
-              if (code === 0) {
-                resolve();
-              } else {
-                reject(new Error(`Server process exited with code ${code}\nOutput: ${output}\nError: ${errorOutput}`));
-              }
-            });
-
-            // Set a timeout for the entire startup process
-            setTimeout(() => {
-              serverProcess.kill();
-              reject(new Error('Server startup timed out'));
-            }, 30000); // 30 second timeout
-          });
-
-          return { success: true, message: 'Vanilla server files prepared successfully.' };
         } else {
-          // Mock behavior for other server types
-          devLog(`Mock preparation for ${serverType} server.`);
-          await new Promise(resolve => setTimeout(resolve, 500)); // Simulate work
-          return { success: true, message: `Preparation step simulated for ${serverType} server.` };
+          // Clean up existing world directory if it exists (for new world generation)
+          try {
+            await fs.rm(serverWorldPath, { recursive: true, force: true });
+            devLog(`Cleaned up existing world directory at ${serverWorldPath} for new world generation.`);
+          } catch (error) {
+            devLog(`Could not clean up world directory for new world generation: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
 
-      } catch (error) {
-        devError('Failed to check Java version:', error);
-        return { 
-          success: false, 
-          message: error instanceof Error ? error.message : 'Failed to check Java version' 
-        };
+        devLog(`Attempting to download vanilla server.jar to ${serverJarPath}`);
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Downloading server' });
+
+        // Download the server.jar using the hardcoded URL
+        const hardcodedServerDownloadUrl = 'https://piston-data.mojang.com/v1/objects/e6ec2f64e6080b9b5d9b471b291c33cc7f509733/server.jar'; // Hardcoded URL for 1.21.5
+        devLog(`Downloading vanilla server.jar from hardcoded URL: ${hardcodedServerDownloadUrl}`);
+        const response = await fetch(hardcodedServerDownloadUrl);
+        if (!response.ok) throw new Error(`Failed to download server.jar: ${response.statusText}`);
+        
+        const buffer = await response.arrayBuffer();
+        await fs.writeFile(serverJarPath, Buffer.from(buffer));
+        devLog(`Downloaded server.jar successfully to ${serverJarPath}`);
+
+        // Create basic server.properties
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Configuring server' });
+        const defaultProperties = [
+          'server-port=25565',
+          'server-ip=0.0.0.0', // Explicitly bind to all network interfaces
+          'gamemode=survival',
+          'difficulty=easy',
+          'max-players=20',
+          'online-mode=true',
+          'white-list=false',
+          'enforce-whitelist=false', // Don't enforce whitelist by default
+          'blacklist-enabled=false', // Don't enable blacklist by default
+          'spawn-protection=16',
+          'view-distance=10',
+          'simulation-distance=10',
+          'motd=Welcome to EasyCraft Server!',
+          'enable-status=true', // Prevent server from pausing when empty
+          'pause-when-empty-seconds=0'
+        ].join('\n');
+        await fs.writeFile(serverPropertiesPath, defaultProperties);
+        devLog(`Created basic server.properties at ${serverPropertiesPath}`);
+
+        // Create eula.txt (Moved from ACCEPT_EULA handler)
+        const eulaPath = join(serverDirectory, 'eula.txt');
+        const eulaContent = `#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecraft_eula).\n#Generated for Minecraft Server\neula=true\n`;
+        await fs.writeFile(eulaPath, eulaContent, 'utf-8');
+        devLog(`Created or updated eula.txt at ${eulaPath} with acceptance.`);
+
+        // Validate RAM allocation
+        const maxRamMB = Math.min(ramGB * 1024, 16384); // Cap at 16GB
+        const minRamMB = Math.min(1024, maxRamMB); // Minimum 1GB or max if lower
+
+        // Start the server to generate world files
+        devLog(`Attempting to start ${serverType} server in ${serverDirectory} with ${maxRamMB}MB RAM.`);
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Generating world' });
+        const command = `${javaPath} -Xmx${maxRamMB}M -Xms${minRamMB}M -jar "${serverJarPath}" --nogui`;
+        devLog(`Starting server with command: ${command}`);
+
+        // Clean up any existing server process before starting a new one
+        cleanupMinecraftServerProcess();
+
+        // Log a message about potential connection issues
+        devLog('Note: If players cannot connect, check Windows Firewall settings for port 25565');
+
+        // Attempt to delete the latest.log file to clear potential locks
+        const latestLogPath = join(serverDirectory, 'logs', 'latest.log');
+        try {
+          await fs.unlink(latestLogPath);
+          devLog(`Successfully deleted ${latestLogPath}`);
+        } catch (error) {
+          // Ignore if the file doesn't exist or cannot be deleted
+          devLog(`Could not delete ${latestLogPath}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+        const serverProcess = spawn(javaPath, [
+          `-Xmx${maxRamMB}M`,
+          `-Xms${minRamMB}M`,
+          '-jar',
+          serverJarPath,
+          '--nogui'
+        ], {
+          cwd: serverDirectory,
+          stdio: ['pipe', 'pipe', 'pipe']
+        }) as ChildProcessWithoutNullStreams;
+
+        // Check if the process was successfully spawned and streams are available
+        if (!serverProcess || !serverProcess.stdout || !serverProcess.stderr) {
+          devError('Failed to spawn server process or get streams');
+          _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+            success: false, 
+            error: 'Failed to start server process streams are missing' 
+          });
+          // No process to kill, just return
+          return { success: false, message: 'Failed to start server process streams are missing' };
+        }
+
+        // Wait for server to start and generate files
+        await new Promise<void>((resolve, reject) => {
+          let output = '';
+          let errorOutput = '';
+
+          serverProcess.stdout?.on('data', (data) => {
+            const message = data.toString();
+            output += message;
+            devLog(`Server stdout: ${message}`);
+            
+            // Check for successful startup
+            if (message.includes('Done') || message.includes('For help, type "help"')) {
+              resolve();
+            }
+          });
+
+          serverProcess.stderr?.on('data', (data) => {
+            const message = data.toString();
+            errorOutput += message;
+            devError(`Server stderr: ${message}`);
+
+            // Check for specific fatal error patterns to proactively stop the process
+            if (
+              message.includes('FileSystemException') ||
+              message.includes('Failed to start the minecraft server') ||
+              message.includes('Error:')
+            ) {
+              devError('Detected fatal server startup error. Signalling failure and attempting to terminate process.');
+              _event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, message);
+              _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+                success: false, 
+                error: `Server startup failed: ${message}` 
+              });
+              // Attempt to kill the process to prevent hanging
+              if (minecraftServerProcess && !minecraftServerProcess.killed) {
+                minecraftServerProcess.kill();
+              }
+            }
+          });
+
+          serverProcess.on('close', (code) => {
+            devLog(`Server process closed with code ${code}`);
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Server process exited with code ${code}\nOutput: ${output}\nError: ${errorOutput}`));
+            }
+          });
+
+          // Set a timeout for the entire startup process
+          setTimeout(() => {
+            serverProcess.kill();
+            reject(new Error('Server startup timed out'));
+          }, 30000); // 30 second timeout
+        });
+
+        return { success: true, message: 'Vanilla server files prepared successfully.' };
+      } else {
+        // Mock behavior for other server types
+        devLog(`Mock preparation for ${serverType} server.`);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate work
+        return { success: true, message: `Preparation step simulated for ${serverType} server.` };
       }
 
     } catch (error) {
@@ -581,7 +403,7 @@ export function registerMinecraftHandlers() {
   });
 
   // Handle starting the Minecraft server
-  ipcMain.handle(IPC_CHANNELS.START_MINECRAFT_SERVER, async (_event, { serverDirectory, serverType, ram, javaPath }: { serverDirectory: string; serverType: string; ram: number; javaPath: string }) => {
+  ipcMain.handle(IPC_CHANNELS.SERVER_START, async (_event, { serverDirectory, serverType, ram, javaPath }: { serverDirectory: string; serverType: string; ram: number; javaPath: string }) => {
     // Create a new promise for this startup attempt
     serverStartupPromise = new Promise<void>((resolve, reject) => {
       resolveStartupPromise = resolve; // Store resolve function
@@ -603,6 +425,8 @@ export function registerMinecraftHandlers() {
         throw new Error('Invalid Java path provided');
       }
 
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Allocating memory' });
+
       const serverJarPath = join(serverDirectory, 'server.jar');
       // No need to check serverJarPath existence here, PREPARE_SERVER_FILES handles download
 
@@ -613,8 +437,10 @@ export function registerMinecraftHandlers() {
       devLog(`Starting ${serverType} server in ${serverDirectory} with ${maxRamMB}MB RAM.`);
 
       // Clean up any existing server process and wait for file handles to be released
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Cleaning up' });
       await cleanupWithDelay(serverDirectory);
 
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Launching server' });
       minecraftServerProcess = spawn(javaPath, [
         `-Xmx${maxRamMB}M`,
         `-Xms${minRamMB}M`,
@@ -631,7 +457,7 @@ export function registerMinecraftHandlers() {
         const errorMsg = 'Failed to spawn Minecraft server process or get streams';
         devError(errorMsg);
         // Send failure to renderer immediately
-        _event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: false, error: errorMsg });
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
         // Reject the promise to signal failure to the renderer's invoke call
         rejectStartupPromise?.(new Error(errorMsg));
         // No process to kill, just return
@@ -645,7 +471,7 @@ export function registerMinecraftHandlers() {
       await serverStartupPromise;
 
       // If we reach here, the promise resolved successfully.
-      // The SERVER_STARTED success message was already sent by the stdout listener.
+      // The SERVER_STATUS_UPDATE success message was already sent by the stdout listener.
       return { success: true, message: 'Minecraft server startup process completed successfully.' };
 
     } catch (error) {
@@ -653,7 +479,7 @@ export function registerMinecraftHandlers() {
       const errorMsg = error instanceof Error ? error.message : 'An unexpected error occurred during server startup setup.';
       devError('Caught error during server startup setup:', error);
       // Send failure to renderer if not already sent by listeners
-      _event.sender.send(IPC_CHANNELS.SERVER_STARTED, { success: false, error: errorMsg });
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
       // Reject the promise if it hasn't been already
       rejectStartupPromise?.(new Error(errorMsg));
 

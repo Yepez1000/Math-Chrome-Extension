@@ -39,22 +39,20 @@ const api: ElectronAPI = {
       const validInvokeChannels = [
         IPC_CHANNELS.PICK_DIRECTORY,
         IPC_CHANNELS.IMPORT_WORLD,
-        IPC_CHANNELS.START_TUNNEL,
-        IPC_CHANNELS.STOP_TUNNEL,
+        IPC_CHANNELS.TUNNEL_START,
+        IPC_CHANNELS.TUNNEL_STOP,
         IPC_CHANNELS.PLAYIT_API_CHAIN,
         'get-system-info',
         // Whitelist clipboard write channel
         IPC_CHANNELS.CLIPBOARD_WRITE,
-        // Whitelist EULA acceptance channel
-        IPC_CHANNELS.ACCEPT_EULA,
         // Whitelist channel for getting default server directory
-        IPC_CHANNELS.GET_DEFAULT_SERVER_DIRECTORY,
+        IPC_CHANNELS.SERVER_DIRECTORY_DEFAULT,
         // Whitelist channel for preparing server files
-        IPC_CHANNELS.PREPARE_SERVER_FILES,
+        IPC_CHANNELS.SERVER_PREPARE_FILES,
         // Whitelist channel for starting the Minecraft server
-        IPC_CHANNELS.START_MINECRAFT_SERVER,
-        // Whitelist channel for detecting Minecraft installation and Java version
-        IPC_CHANNELS.DETECT_MINECRAFT_INSTALLATION,
+        IPC_CHANNELS.SERVER_START,
+        // Whitelist channel for detecting Java version
+        IPC_CHANNELS.JAVA_DETECT_VERSION,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)
@@ -66,13 +64,13 @@ const api: ElectronAPI = {
       const validOnChannels = [
         IPC_CHANNELS.TUNNEL_ADDRESS,
         IPC_CHANNELS.TUNNEL_ERROR,
-        IPC_CHANNELS.TUNNEL_STATUS,
+        IPC_CHANNELS.TUNNEL_STATUS_UPDATE,
         IPC_CHANNELS.CLAIM_LINK,
         // Add channels for server console output
-        IPC_CHANNELS.SERVER_OUTPUT,
-        IPC_CHANNELS.SERVER_ERROR_OUTPUT,
+        IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
+        IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         // Add channel for server started event
-        IPC_CHANNELS.SERVER_STARTED,
+        IPC_CHANNELS.SERVER_STATUS_UPDATE,
         // Add other on channels as needed
       ] as const
       if ((validOnChannels as ReadonlyArray<string>).includes(channel)) {
@@ -84,7 +82,7 @@ const api: ElectronAPI = {
       const validRemoveListenerChannels = [
         IPC_CHANNELS.TUNNEL_ADDRESS,
         IPC_CHANNELS.TUNNEL_ERROR,
-        IPC_CHANNELS.TUNNEL_STATUS,
+        IPC_CHANNELS.TUNNEL_STATUS_UPDATE,
         IPC_CHANNELS.CLAIM_LINK,
         // Add other removeListener channels as needed
       ] as const
@@ -96,7 +94,7 @@ const api: ElectronAPI = {
       const validRemoveAllListenersChannels = [
         IPC_CHANNELS.TUNNEL_ADDRESS,
         IPC_CHANNELS.TUNNEL_ERROR,
-        IPC_CHANNELS.TUNNEL_STATUS,
+        IPC_CHANNELS.TUNNEL_STATUS_UPDATE,
         IPC_CHANNELS.CLAIM_LINK,
         // Add other removeAllListeners channels as needed
       ] as const

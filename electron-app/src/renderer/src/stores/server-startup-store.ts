@@ -17,6 +17,7 @@ interface ServerStartupState {
   error: string | null
   dnsAddress: string | null
   playitTunnelStatusDetails: string | null
+  minecraftServerStatusDetails: string | null
   addStatusMessage: (message: Omit<StatusMessage, 'id'>) => void
   updateLastStatusMessage: (status: StatusMessage["status"]) => void
   setCurrentStep: (step: number) => void
@@ -26,6 +27,7 @@ interface ServerStartupState {
   setDnsAddress: (address: string | null) => void
   reset: () => void
   setPlayitTunnelStatusDetails: (details: string | null) => void
+  setMinecraftServerStatusDetails: (details: string | null) => void
 }
 
 interface ServerStartupActions {
@@ -38,6 +40,7 @@ interface ServerStartupActions {
   setDnsAddress: (address: string | null) => void
   reset: () => void
   setPlayitTunnelStatusDetails: (details: string | null) => void
+  setMinecraftServerStatusDetails: (details: string | null) => void
 }
 
 type ServerStartupStore = ServerStartupState & ServerStartupActions;
@@ -50,6 +53,7 @@ const initialState = {
   error: null,
   dnsAddress: null,
   playitTunnelStatusDetails: null,
+  minecraftServerStatusDetails: null,
 }
 
 export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
@@ -83,6 +87,8 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   reset: () => set(initialState),
 
   setPlayitTunnelStatusDetails: (details) => set({ playitTunnelStatusDetails: details }),
+
+  setMinecraftServerStatusDetails: (details) => set({ minecraftServerStatusDetails: details }),
 
   // Note: The executeStartupSequence action is defined and used in the component for now.
   // IPC listeners will be set up in the component and call store actions to update state.

@@ -117,7 +117,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
   // Remove assignment to mainWindow
   // mainWindow = window;
 
-  ipcMain.handle(IPC_CHANNELS.START_TUNNEL, async (_event, { serverPort }): Promise<StartTunnelResponse> => {
+  ipcMain.handle(IPC_CHANNELS.TUNNEL_START, async (_event, { serverPort }): Promise<StartTunnelResponse> => {
     // Validate serverPort
     if (typeof serverPort !== 'number' || serverPort < 1 || serverPort > 65535) {
       const errorMessage = `Invalid server port: ${serverPort}. Port must be a number between 1 and 65535.`;
@@ -138,9 +138,9 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       devLog(`Starting full setup attempt ${fullRetryAttempts}/${maxFullRetries}...`);
       // Send status update for starting a new attempt
       if (fullRetryAttempts > 1) {
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: `Retrying Setup` });
+         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: `Retrying Connection` });
       } else {
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Starting Setup" });
+         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting to Playit" });
       }
 
       // Reset cookies for a fresh attempt
@@ -178,7 +178,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
         const errorMessage = `Setup Error: ${error.message}`;
           devError(errorMessage);
           _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-          _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Error" });
+          _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
         finalMessage = errorMessage;
         break;
       }
@@ -233,7 +233,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
               if (cleanChunk.includes("checking if secret key is valid")) {
                   devLog('Detected existing agent flow start signal.');
-                  _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Connecting Agent" });
+                  _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting Agent" });
                   resolve({ type: 'existingAgent' });
                 return;
               }
@@ -274,7 +274,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
          try {
              const loginUrlCommand = 'playit account login-url';
              devLog(`Running command: ${loginUrlCommand}`);
-             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Connecting Agent" });
+             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting Agent" });
              loginUrl = await new Promise<string>((resolve, reject) => {
                  exec(loginUrlCommand, (error, stdout, stderr) => {
                      if (error) {
@@ -299,7 +299,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
              const errorMessage = `Login URL Error: ${error.message}`;
              devError(errorMessage);
              _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Error" });
+             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
              finalMessage = errorMessage;
              // Trigger full retry if login URL cannot be obtained
              continue;
@@ -307,7 +307,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
          // Step 3: Feed the login URL into the old flow
          devLog('Making GET request with login link...');
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Connecting Agent" });
+         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting Agent" });
          try {
              const loginLinkResp = await fetch(loginUrl as string, { method: 'GET'});
              updateCookies(loginLinkResp.headers.get('set-cookie'));
@@ -316,7 +316,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
              devError(`GET request with login link failed: ${error}`);
              finalMessage = `Failed to use login URL: ${error}`;
              _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: finalMessage }); // Send error status
-             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Error" });
+             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
              cleanupPlayitProcess();
              await delay(1000);
              continue;
@@ -416,7 +416,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
            finalMessage = 'Did not receive claim code from Playit agent.';
          devError(finalMessage);
            _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: finalMessage }); // Send error status
-           _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Error" });
+           _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
            cleanupPlayitProcess();
            await delay(5000);
            continue;
@@ -467,7 +467,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
         const errorMessage = `API Chain Error (Steps 1-3): ${apiError.message}`;
       devError(errorMessage);
         _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-        _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Error" }); // Send error status
+        _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" }); // Send error status
         finalMessage = errorMessage;
         cleanupPlayitProcess();
         await delay(1000);
@@ -475,7 +475,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       }
 
     devLog('Starting claim polling phase (GET requests)...');
-      _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Polling Claim" });
+      _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Polling Claim" });
       const getHeaders = buildHeaders({'Accept': '*/*'});
       let pollingAttempts = 0;
       const maxPollingAttempts = 60;
@@ -495,7 +495,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
         if (cleanChunk.includes("Visit link to setup")) {
             devLog('[Polling Listener] Detected "Visit link to setup", triggering full retry.');
-            _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Manual Retry" });
+            _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Manual Retry" });
             shouldExitPolling = true;
         }
     };
@@ -527,7 +527,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
             if (agentIdMatch && agentIdMatch[1]) {
               detectedAgentId = agentIdMatch[1];
             devLog('Claim polling successful. Extracted Agent ID from redirect header:', detectedAgentId);
-              _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Setting Tunnel" });
+              _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Setting Tunnel" });
               claimPollingSuccess = true;
               playitProcess?.stdout?.removeAllListeners('data');
               playitProcess?.removeAllListeners('close');
@@ -538,7 +538,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
         } catch (pollingError: any) {
         devError(`Polling GET request failed on attempt ${pollingAttempts}: ${pollingError.message}`);
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: `Polling failed (Attempt ${pollingAttempts}/${maxPollingAttempts})...` }); // Send status update
+         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: `Polling failed (Attempt ${pollingAttempts}/${maxPollingAttempts})...` }); // Send status update
         }
         await delay(3000);
       }
@@ -590,7 +590,7 @@ export function getPlayitProcess(): ChildProcess | null {
 
 async function createAndPollForTunnelDetails(_event: Electron.IpcMainInvokeEvent, agentId: string): Promise<StartTunnelResponse> {
   devLog(`Creating and polling for tunnel details for Agent ID: ${agentId}...`);
-  _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Setting Tunnel" });
+  _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Setting Tunnel" });
   let finalMessage = '';
   let tunnelId: string | undefined = undefined;
   let assignedDomain: string | undefined = undefined;
@@ -639,7 +639,7 @@ async function createAndPollForTunnelDetails(_event: Electron.IpcMainInvokeEvent
 
   if (tunnelId) {
     devLog('Starting polling for tunnel details...');
-    _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS, { status: "Getting Tunnel Details" });
+    _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Getting Tunnel Details" });
     let tunnelDetailsPollingSuccess = false;
     const maxTunnelPollingAttempts = 60;
 

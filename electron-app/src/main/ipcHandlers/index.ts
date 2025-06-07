@@ -6,6 +6,7 @@ import { registerPlayitHandlers } from './playitHandlers';
 import { registerMinecraftHandlers } from './minecraftHandlers';
 // Import clipboard handlers
 import { registerClipboardHandlers } from './clipboardHandlers';
+import { registerJavaHandlers } from './javaHandlers';
 
 // Modify to not expect mainWindow
 export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
@@ -18,6 +19,7 @@ export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
   registerMinecraftHandlers();
   // Register clipboard handlers
   registerClipboardHandlers();
+  registerJavaHandlers();
 }
 
 ipcMain.handle('show-prompt', async (_, title: string, defaultValue: string) => {

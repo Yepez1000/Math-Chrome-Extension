@@ -88,7 +88,7 @@ async function fetchDefaultServerDirectory() {
   const currentConfig = useServerConfigStore.getState().config;
   if (!currentConfig.serverDirectory) {
     try {
-      const defaultPath = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_DEFAULT_SERVER_DIRECTORY);
+      const defaultPath = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_DIRECTORY_DEFAULT);
       if (defaultPath) {
         useServerConfigStore.getState().updateConfig({ serverDirectory: defaultPath });
       }

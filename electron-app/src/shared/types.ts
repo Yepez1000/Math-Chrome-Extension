@@ -14,27 +14,35 @@ export interface WorldImportParams {
   worldName: string;
 }
 
+// Java version detection response
+export interface JavaVersionResponse {
+  javaStatus: 'supported' | 'unsupported' | 'error';
+  javaVersion: string | null;
+  javaPath?: string;
+  message: string;
+  error?: string;
+}
+
 // IPC Channel names as constants to prevent typos and improve maintainability
 export const IPC_CHANNELS = {
   PICK_DIRECTORY: 'pick-directory',
   IMPORT_WORLD: 'import-world',
-  SELECT_SERVER_DIRECTORY: 'select-server-directory',
-  START_TUNNEL: 'start-tunnel',
-  STOP_TUNNEL: 'stop-tunnel',
-  TUNNEL_STATUS: 'tunnel-status',
+  SERVER_DIRECTORY_SELECT: 'server-directory-select',
+  TUNNEL_START: 'tunnel-start',
+  TUNNEL_STOP: 'tunnel-stop',
+  TUNNEL_STATUS_UPDATE: 'tunnel-status-update',
   TUNNEL_ERROR: 'tunnel-error',
   TUNNEL_ADDRESS: 'tunnel-address',
   CLAIM_LINK: 'claim-link',
   PLAYIT_API_CHAIN: 'playit-api-chain',
-  ACCEPT_EULA: 'accept-eula',
   CLIPBOARD_WRITE: 'clipboard-write',
-  PREPARE_SERVER_FILES: 'prepare-server-files',
-  START_MINECRAFT_SERVER: 'start-minecraft-server',
-  GET_DEFAULT_SERVER_DIRECTORY: 'get-default-server-directory',
-  SERVER_OUTPUT: 'server-output',
-  SERVER_ERROR_OUTPUT: 'server-error-output',
-  SERVER_STARTED: 'server-started',
-  DETECT_MINECRAFT_INSTALLATION: 'detect-minecraft-installation',
+  SERVER_PREPARE_FILES: 'server-prepare-files',
+  SERVER_START: 'server-start',
+  SERVER_DIRECTORY_DEFAULT: 'server-directory-default',
+  SERVER_CONSOLE_OUTPUT: 'server-console-output',
+  SERVER_CONSOLE_ERROR: 'server-console-error',
+  SERVER_STATUS_UPDATE: 'server-status-update',
+  JAVA_DETECT_VERSION: 'java-detect-version',
 } as const; 
 
 export interface SystemInfo {
@@ -54,6 +62,6 @@ export interface StartServerConfig {
   serverDirectory: string;
   serverType: "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit";
   ram: number;
-  javaPath?: string | null; // Optional Java path
+  javaPath: string; // Required Java path
 }
 
