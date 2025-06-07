@@ -99,7 +99,9 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.PREPARE_SERVER_FILES, { 
       serverDirectory: config.serverDirectory, 
       serverType: config.serverType,
-      ramGB: config.ram 
+      ramGB: config.ram,
+      worldPath: config.worldPath,
+      importedWorld: config.importedWorld,
     })
     return result; // Return result for error checking in executeStep
   };

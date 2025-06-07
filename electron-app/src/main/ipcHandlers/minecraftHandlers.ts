@@ -290,7 +290,7 @@ export function registerMinecraftHandlers() {
   });
 
   // Handle preparing server files
-  ipcMain.handle(IPC_CHANNELS.PREPARE_SERVER_FILES, async (_event, { serverDirectory, serverType, ramGB }: { serverDirectory: string; serverType: string; ramGB: number }) => {
+  ipcMain.handle(IPC_CHANNELS.PREPARE_SERVER_FILES, async (_event, { serverDirectory, serverType, ramGB, worldPath, importedWorld }: { serverDirectory: string; serverType: string; ramGB: number; worldPath?: string; importedWorld?: boolean }) => {
     try {
       // Validate input
       if (!serverDirectory || typeof serverDirectory !== 'string') {
@@ -380,13 +380,37 @@ export function registerMinecraftHandlers() {
           }
           const serverPropertiesPath = join(serverDirectory, 'server.properties');
 
-          // Clean up existing world directory if it exists
-          const worldPath = join(serverDirectory, 'world');
-          try {
-            await fs.rm(worldPath, { recursive: true, force: true });
-            devLog(`Cleaned up existing world directory at ${worldPath}`);
-          } catch (error) {
-            devLog(`Could not clean up world directory: ${error instanceof Error ? error.message : String(error)}`);
+          // Handle world directory based on whether a world was imported
+          const serverWorldPath = join(serverDirectory, 'world');
+          if (importedWorld && worldPath) {
+            // Normalize paths for comparison to avoid issues with different path separators or trailing slashes
+            const normalizedWorldPath = worldPath.endsWith('/') || worldPath.endsWith('\\') ? worldPath.slice(0, -1) : worldPath;
+            const normalizedServerWorldPath = serverWorldPath.endsWith('/') || serverWorldPath.endsWith('\\') ? serverWorldPath.slice(0, -1) : serverWorldPath;
+
+            if (normalizedWorldPath === normalizedServerWorldPath) {
+              devLog(`World directory already exists at target location: ${serverWorldPath}. Skipping copy operation.`);
+            } else {
+              devLog(`Importing existing world from ${worldPath} to ${serverWorldPath}`);
+              // Ensure the target world directory is clean before copying
+              try {
+                await fs.rm(serverWorldPath, { recursive: true, force: true });
+                devLog(`Cleaned up existing server world directory at ${serverWorldPath} for import.`);
+              } catch (error) {
+                devLog(`Could not clean up server world directory for import: ${error instanceof Error ? error.message : String(error)}`);
+              }
+
+              // Copy the world contents
+              await fs.cp(worldPath, serverWorldPath, { recursive: true });
+              devLog(`Copied world from ${worldPath} to ${serverWorldPath}`);
+            }
+          } else {
+            // Clean up existing world directory if it exists (for new world generation)
+            try {
+              await fs.rm(serverWorldPath, { recursive: true, force: true });
+              devLog(`Cleaned up existing world directory at ${serverWorldPath} for new world generation.`);
+            } catch (error) {
+              devLog(`Could not clean up world directory for new world generation: ${error instanceof Error ? error.message : String(error)}`);
+            }
           }
 
           devLog(`Attempting to download vanilla server.jar to ${serverJarPath}`);
