@@ -4,9 +4,9 @@ import fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../shared/types';
 import { devLog, devError } from '../utils/logger';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import { execAsync } from '../utils/execAsync';
 
 let minecraftServerProcess: ChildProcessWithoutNullStreams | null = null;
+let minecraftServerPid: number | null = null;
 let serverStartupPromise: Promise<void> | null = null; // Track the startup promise
 let rejectStartupPromise: ((reason?: any) => void) | null = null; // Function to reject the promise
 let resolveStartupPromise: (() => void) | null = null; // Function to resolve the promise
@@ -22,6 +22,16 @@ function cleanupMinecraftServerProcess() {
     }
     minecraftServerProcess = null;
   }
+  // Extra safety: kill by PID if still running
+  if (minecraftServerPid) {
+    try {
+      process.kill(minecraftServerPid);
+      devLog(`Killed Minecraft server process by PID: ${minecraftServerPid}`);
+    } catch (e) {
+      // It's OK if the process is already dead
+    }
+    minecraftServerPid = null;
+  }
 }
 
 // Add a new function to handle cleanup with delay and verification
@@ -30,28 +40,6 @@ async function cleanupWithDelay(serverDirectory: string): Promise<void> {
   
   // Wait a moment for file handles to be released
   await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Verify no Java process is running the server.jar
-  try {
-    const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq java.exe" /FO CSV /NH');
-    const javaProcesses = stdout.split('\n')
-      .filter(line => line.includes('java.exe'))
-      .map(line => line.split(',')[1].replace(/"/g, '').trim());
-    
-    if (javaProcesses.length > 0) {
-      devLog('Found running Java processes, attempting to terminate them...');
-      // Use Promise.all to try terminating all processes concurrently, ignoring individual errors
-      await Promise.all(javaProcesses.map(pid =>
-        execAsync(`taskkill /F /PID ${pid}`).catch((error) => {
-           devLog(`Could not terminate Java process ${pid}: ${error instanceof Error ? error.message : String(error)}`);
-        }) // Catch errors for individual taskkill commands
-      ));
-      // Wait again after killing processes
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-  } catch (error) {
-    devLog(`Error checking for Java processes: ${error instanceof Error ? error.message : String(error)}`);
-  }
   
   // Attempt to delete the latest.log file
   const latestLogPath = join(serverDirectory, 'logs', 'latest.log');
@@ -385,6 +373,7 @@ export function registerMinecraftHandlers() {
           }, 30000); // 30 second timeout
         });
 
+        minecraftServerPid = serverProcess.pid ?? null;
         return { success: true, message: 'Vanilla server files prepared successfully.' };
       } else {
         // Mock behavior for other server types
@@ -472,6 +461,7 @@ export function registerMinecraftHandlers() {
 
       // If we reach here, the promise resolved successfully.
       // The SERVER_STATUS_UPDATE success message was already sent by the stdout listener.
+      minecraftServerPid = minecraftServerProcess.pid ?? null;
       return { success: true, message: 'Minecraft server startup process completed successfully.' };
 
     } catch (error) {
