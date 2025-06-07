@@ -21,6 +21,7 @@ import { PluginsManagement } from "./plugins/plugins-management"
 import { ConsoleView } from "./console/console-view"
 import { LayoutDashboard, Terminal, Puzzle, Users, Archive, Calendar, Settings, Folder } from "lucide-react"
 import { useServerStore } from "@/lib/store"
+// Removed misplaced imports and code from playitHandlers.ts
 
 export function ServerDashboard() {
   const { toast } = useToast()

@@ -14,15 +14,54 @@ export interface WorldImportParams {
   worldName: string;
 }
 
+// Java version detection response
+export interface JavaVersionResponse {
+  javaStatus: 'supported' | 'unsupported' | 'error';
+  javaVersion: string | null;
+  javaPath?: string;
+  message: string;
+  error?: string;
+}
+
 // IPC Channel names as constants to prevent typos and improve maintainability
 export const IPC_CHANNELS = {
   PICK_DIRECTORY: 'pick-directory',
   IMPORT_WORLD: 'import-world',
-  SELECT_SERVER_DIRECTORY: 'select-server-directory'
+  SERVER_DIRECTORY_SELECT: 'server-directory-select',
+  TUNNEL_START: 'tunnel-start',
+  TUNNEL_STOP: 'tunnel-stop',
+  TUNNEL_STATUS_UPDATE: 'tunnel-status-update',
+  TUNNEL_ERROR: 'tunnel-error',
+  TUNNEL_ADDRESS: 'tunnel-address',
+  CLAIM_LINK: 'claim-link',
+  PLAYIT_API_CHAIN: 'playit-api-chain',
+  CLIPBOARD_WRITE: 'clipboard-write',
+  SERVER_PREPARE_FILES: 'server-prepare-files',
+  SERVER_START: 'server-start',
+  SERVER_DIRECTORY_DEFAULT: 'server-directory-default',
+  SERVER_CONSOLE_OUTPUT: 'server-console-output',
+  SERVER_CONSOLE_ERROR: 'server-console-error',
+  SERVER_STATUS_UPDATE: 'server-status-update',
+  JAVA_DETECT_VERSION: 'java-detect-version',
 } as const; 
 
 export interface SystemInfo {
   totalRam: number;
   availableRam: number;
   cpuCores: number;
-} 
+}
+
+export type StatusMessage = {
+  message: string
+  status: "pending" | "success" | "error"
+  id: string // Add unique ID
+}
+
+// Interface for the server configuration passed to main process handlers
+export interface StartServerConfig {
+  serverDirectory: string;
+  serverType: "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit";
+  ram: number;
+  javaPath: string; // Required Java path
+}
+

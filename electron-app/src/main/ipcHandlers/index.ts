@@ -2,11 +2,24 @@ import { ipcMain, dialog } from 'electron'
 import { registerServerDirectoryHandler } from './serverDirectory';
 import { registerWorldHandlers } from './worldHandlers';
 import { registerSystemInfoHandler } from './systemInfo';
+import { registerPlayitHandlers } from './playitHandlers';
+import { registerMinecraftHandlers } from './minecraftHandlers';
+// Import clipboard handlers
+import { registerClipboardHandlers } from './clipboardHandlers';
+import { registerJavaHandlers } from './javaHandlers';
 
-export function registerAllIpcHandlers() {
+// Modify to not expect mainWindow
+export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
   registerServerDirectoryHandler();
   registerWorldHandlers();
   registerSystemInfoHandler();
+  // Call registerPlayitHandlers without arguments
+  registerPlayitHandlers();
+  // Register Minecraft handlers
+  registerMinecraftHandlers();
+  // Register clipboard handlers
+  registerClipboardHandlers();
+  registerJavaHandlers();
 }
 
 ipcMain.handle('show-prompt', async (_, title: string, defaultValue: string) => {

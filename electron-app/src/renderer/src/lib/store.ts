@@ -2,6 +2,14 @@ import { create } from "zustand"
 import { devtools, persist } from "zustand/middleware"
 import type { LucideIcon } from "lucide-react"
 
+export type TunnelStatus = "idle" | "starting" | "running" | "error" | "stopping"
+export type TunnelState = {
+  status: TunnelStatus
+  address: string | null
+  error: string | null
+  port: number
+}
+
 export type ServerStatus = "online" | "offline" | "starting" | "stopping"
 
 export type PlayerData = {
@@ -97,6 +105,9 @@ interface ServerState {
   // Scheduled tasks
   scheduledTasks: ScheduledTask[]
 
+  // Tunnel state
+  tunnel: TunnelState
+
   // Actions
   setServerName: (name: string) => void
   setStatus: (status: ServerStatus) => void
@@ -105,6 +116,12 @@ interface ServerState {
   removePlayer: (playerId: string) => void
   updatePlayer: (playerId: string, updates: Partial<PlayerData>) => void
   updatePerformance: (cpu: number, ram: number, uptime?: number) => void
+
+  // Tunnel actions
+  setTunnelStatus: (status: TunnelStatus) => void
+  setTunnelAddress: (address: string | null) => void
+  setTunnelError: (error: string | null) => void
+  setTunnelPort: (port: number) => void
 
   // Backup actions
   createBackup: () => Promise<void>
@@ -390,6 +407,14 @@ export const useServerStore = create<ServerState>()(
         // Scheduled tasks
         scheduledTasks: initialScheduledTasks,
 
+        // Tunnel state
+        tunnel: {
+          status: "idle",
+          address: null,
+          error: null,
+          port: 25565
+        },
+
         // Actions
         setServerName: (name) => set({ serverName: name }),
 
@@ -455,6 +480,23 @@ export const useServerStore = create<ServerState>()(
             ram,
             uptime: uptime !== undefined ? uptime : state.uptime + 1,
           })),
+
+        // Tunnel actions
+        setTunnelStatus: (status) => set((state) => ({
+          tunnel: { ...state.tunnel, status }
+        })),
+
+        setTunnelAddress: (address) => set((state) => ({
+          tunnel: { ...state.tunnel, address }
+        })),
+
+        setTunnelError: (error) => set((state) => ({
+          tunnel: { ...state.tunnel, error }
+        })),
+
+        setTunnelPort: (port) => set((state) => ({
+          tunnel: { ...state.tunnel, port }
+        })),
 
         // Backup actions
         createBackup: async () => {
