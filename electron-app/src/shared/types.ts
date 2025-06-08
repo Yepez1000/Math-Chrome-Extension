@@ -47,6 +47,7 @@ export const IPC_CHANNELS = {
   GET_SERVER_LIST: 'GET_SERVER_LIST',
   ADD_SERVER: 'ADD_SERVER',
   REMOVE_SERVER: 'REMOVE_SERVER',
+  JAVA_SELECT_MANUAL: 'java-select-manual',
 } as const; 
 
 export interface SystemInfo {

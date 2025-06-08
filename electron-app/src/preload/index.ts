@@ -57,6 +57,8 @@ const api: ElectronAPI = {
         IPC_CHANNELS.GET_SERVER_LIST,
         IPC_CHANNELS.ADD_SERVER,
         IPC_CHANNELS.REMOVE_SERVER,
+        // Whitelist channel for manual Java selection
+        IPC_CHANNELS.JAVA_SELECT_MANUAL,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)

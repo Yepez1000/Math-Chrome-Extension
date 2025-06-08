@@ -1,8 +1,8 @@
-import { ipcMain } from 'electron';
-import { join } from 'path';
+import { ipcMain, dialog } from 'electron';
+import { join, /*sep*/ } from 'path';
 import fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../shared/types';
-import { devLog, devError } from '../utils/logger';
+import { /*devLog, */devError } from '../utils/logger';
 import { execAsync } from '../utils/execAsync';
 
 interface JavaVersion {
@@ -11,94 +11,184 @@ interface JavaVersion {
   majorVersion: number;
 }
 
-export function registerJavaHandlers() {
-  // Handle detecting Java version
-  ipcMain.handle(IPC_CHANNELS.JAVA_DETECT_VERSION, async () => {
-    try {
-      devLog('Checking Java installations for Minecraft server...');
-      devLog('Minecraft server requires Java 17 or higher');
+// Recursively search for java.exe in a directory, up to a maximum depth
+async function findJavaExecutables(dir: string, found: string[] = [], depth = 0, maxDepth = 4): Promise<string[]> {
+  if (depth > maxDepth) return found;
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await findJavaExecutables(fullPath, found, depth + 1, maxDepth);
+      } else if (entry.isFile() && entry.name.toLowerCase() === 'java.exe') {
+        found.push(fullPath);
+      }
+    }
+  } catch (e) {
+    // Ignore permission errors or missing directories
+  }
+  return found;
+}
 
-      // Common Java installation paths
-      const commonJavaPaths = [
+function parseJavaVersionOutput(output: string): { version: string, majorVersion: number } | null {
+  // Try to match both "version \"17.0.8\"" and "version \"1.8.0_312\""
+  const match = output.match(/version \"([\d._]+)\"/);
+  if (!match) return null;
+  const version = match[1];
+  let majorVersion = 0;
+  if (version.startsWith('1.')) {
+    // e.g. 1.8.0_312 => 8
+    majorVersion = parseInt(version.split('.')[1], 10);
+  } else {
+    // e.g. 17.0.8 => 17
+    majorVersion = parseInt(version.split('.')[0], 10);
+  }
+  return { version, majorVersion };
+}
+
+export function registerJavaHandlers() {
+  // Handle manual Java selection
+  ipcMain.handle(IPC_CHANNELS.JAVA_SELECT_MANUAL, async () => {
+    try {
+      // Try to open at Eclipse Adoptium or Java folder
+      const defaultPaths = [
         'C:\\Program Files\\Eclipse Adoptium',
         'C:\\Program Files\\Java',
         'C:\\Program Files (x86)\\Java',
-        process.env.JAVA_HOME || '',
-        process.env.PROGRAMFILES || '',
-        process.env['PROGRAMFILES(X86)'] || ''
-      ].filter(Boolean);
+      ];
+      let defaultPath = defaultPaths.find(async (p) => {
+        try { await fs.access(p); return true; } catch { return false; }
+      }) || 'C:\\';
 
-      let bestJavaVersion: JavaVersion | null = null;
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        properties: ['openFile', 'openDirectory'],
+        title: 'Select Java Executable or Folder',
+        filters: [
+          { name: 'Java Executable', extensions: ['exe'] }
+        ],
+        defaultPath
+      });
 
-      // Search for Java installations
-      for (const basePath of commonJavaPaths) {
+      if (canceled || !filePaths[0]) {
+        return { success: false, message: 'No Java executable or folder selected' };
+      }
+
+      let javaPath = filePaths[0];
+      let stat;
+      try {
+        stat = await fs.stat(javaPath);
+      } catch {
+        return { success: false, message: 'Selected path is not accessible' };
+      }
+      if (stat.isDirectory()) {
+        // Recursively search for java.exe in the selected folder
+        const found = await findJavaExecutables(javaPath, [], 0, 4);
+        if (found.length === 0) {
+          return { success: false, message: 'No java.exe found in selected folder' };
+        }
+        javaPath = found[0]; // Use the first found
+      }
+
+      // Validate the selected Java executable
+      try {
+        const { stdout, stderr } = await execAsync(`"${javaPath}" -version`);
+        const output = stdout + stderr;
+        const parsed = parseJavaVersionOutput(output);
+        if (!parsed) {
+          return { success: false, message: 'Invalid Java executable' };
+        }
+        if (parsed.majorVersion < 17) {
+          return { success: false, message: `Java version ${parsed.version} is not compatible. Java 17 or higher is required.` };
+        }
+        return {
+          success: true,
+          path: javaPath,
+          version: parsed.version,
+          majorVersion: parsed.majorVersion
+        };
+      } catch (error) {
+        devError('Failed to validate Java executable:', error);
+        return { success: false, message: 'Failed to validate Java executable' };
+      }
+    } catch (error) {
+      devError('Error in manual Java selection:', error);
+      return { success: false, message: 'Error selecting Java executable' };
+    }
+  });
+
+  // Handle Java version detection
+  ipcMain.handle(IPC_CHANNELS.JAVA_DETECT_VERSION, async (_event, manualJavaPath?: string) => {
+    try {
+      // If a manual Java path is provided, validate and use it
+      if (manualJavaPath) {
         try {
-          const entries = await fs.readdir(basePath, { withFileTypes: true });
-          for (const entry of entries) {
-            if (entry.isDirectory() && entry.name.toLowerCase().includes('jdk')) {
-              const javaPath = join(basePath, entry.name, 'bin', 'java.exe');
-              try {
-                await fs.access(javaPath);
-                const { stderr } = await execAsync(`"${javaPath}" -version`);
-                const versionMatch = stderr.match(/version "([^"]+)"/);
-                if (versionMatch) {
-                  const version = versionMatch[1];
-                  const majorVersion = parseInt(version.split('.')[0]);
-                  
-                  // Update best version if this one is better
-                  if (majorVersion >= 17 && (!bestJavaVersion || majorVersion > bestJavaVersion.majorVersion)) {
-                    bestJavaVersion = {
-                      path: javaPath,
-                      version: version,
-                      majorVersion: majorVersion
-                    };
-                  }
-                }
-              } catch (error) {
-                // Skip if java.exe not found or version check fails
-                continue;
-              }
-            }
+          const { stdout, stderr } = await execAsync(`"${manualJavaPath}" -version`);
+          const output = stdout + stderr;
+          const parsed = parseJavaVersionOutput(output);
+          if (!parsed) {
+            return { success: false, message: 'Invalid Java executable' };
           }
+          if (parsed.majorVersion < 17) {
+            return { success: false, message: `Java version ${parsed.version} is not compatible. Java 17 or higher is required.` };
+          }
+          return {
+            success: true,
+            path: manualJavaPath,
+            version: parsed.version,
+            majorVersion: parsed.majorVersion
+          };
         } catch (error) {
-          // Skip if directory not found or not accessible
+          devError('Failed to validate manual Java path:', error);
+          return { success: false, message: 'Failed to validate Java executable' };
+        }
+      }
+
+      // Otherwise, search for Java installations recursively
+      const commonPaths = [
+        'C:\\Program Files\\Eclipse Adoptium',
+        'C:\\Program Files\\Java',
+        'C:\\Program Files (x86)\\Java',
+        process.env.JAVA_HOME,
+        process.env.PROGRAMFILES,
+        process.env['PROGRAMFILES(X86)']
+      ].filter(Boolean) as string[];
+
+      const javaExecutables: string[] = [];
+      for (const basePath of commonPaths) {
+        const found = await findJavaExecutables(basePath, [], 0, 4);
+        javaExecutables.push(...found);
+      }
+
+      const javaVersions: JavaVersion[] = [];
+      for (const javaPath of javaExecutables) {
+        try {
+          const { stdout, stderr } = await execAsync(`"${javaPath}" -version`);
+          const output = stdout + stderr;
+          const parsed = parseJavaVersionOutput(output);
+          if (parsed && parsed.majorVersion >= 17) {
+            javaVersions.push({ path: javaPath, version: parsed.version, majorVersion: parsed.majorVersion });
+          }
+        } catch {
           continue;
         }
       }
 
-      if (!bestJavaVersion) {
-        return {
-          javaStatus: 'unsupported',
-          javaVersion: 'none',
-          javaPath: undefined,
-          message: 'Java 17 or higher is required for the Minecraft server. Please install Java 17 or higher from adoptium.net'
-        };
-      }
-      if (bestJavaVersion.majorVersion < 17) {
-        return {
-          javaStatus: 'unsupported',
-          javaVersion: bestJavaVersion.version,
-          javaPath: bestJavaVersion.path,
-          message: 'Java 17 or higher is required for the Minecraft server. Please install Java 17 or higher from adoptium.net'
-        };
+      if (javaVersions.length === 0) {
+        return { success: false, message: 'No Java 17+ installations found' };
       }
 
-      devLog(`Using Java ${bestJavaVersion.version} from ${bestJavaVersion.path}`);
-      return { 
-        javaStatus: 'supported', 
-        javaVersion: bestJavaVersion.version,
-        javaPath: bestJavaVersion.path,
-        message: 'Compatible Java version found!'
+      // Sort by major version (highest first)
+      javaVersions.sort((a, b) => b.majorVersion - a.majorVersion);
+
+      return {
+        success: true,
+        path: javaVersions[0].path,
+        version: javaVersions[0].version,
+        majorVersion: javaVersions[0].majorVersion
       };
-
     } catch (error) {
-      devError('Failed during Java detection:', error);
-      return { 
-        javaStatus: 'error',
-        javaVersion: null,
-        error: error instanceof Error ? error.message : 'Unknown detection error',
-        message: 'Error checking Java installation'
-      };
+      devError('Error detecting Java version:', error);
+      return { success: false, message: 'Error detecting Java version' };
     }
   });
 } 
