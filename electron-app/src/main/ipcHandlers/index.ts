@@ -7,7 +7,7 @@ import { registerMinecraftHandlers } from './minecraftHandlers';
 // Import clipboard handlers
 import { registerClipboardHandlers } from './clipboardHandlers';
 import { registerJavaHandlers } from './javaHandlers';
-
+import { registerServerListHandlers } from './serverListHandlers';
 // Modify to not expect mainWindow
 export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
   registerServerDirectoryHandler();
@@ -20,6 +20,7 @@ export function registerAllIpcHandlers(/* mainWindow: BrowserWindow */) {
   // Register clipboard handlers
   registerClipboardHandlers();
   registerJavaHandlers();
+  registerServerListHandlers();
 }
 
 ipcMain.handle('show-prompt', async (_, title: string, defaultValue: string) => {
