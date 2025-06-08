@@ -53,6 +53,10 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_START,
         // Whitelist channel for detecting Java version
         IPC_CHANNELS.JAVA_DETECT_VERSION,
+        // Add server list management channels
+        IPC_CHANNELS.GET_SERVER_LIST,
+        IPC_CHANNELS.ADD_SERVER,
+        IPC_CHANNELS.REMOVE_SERVER,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)

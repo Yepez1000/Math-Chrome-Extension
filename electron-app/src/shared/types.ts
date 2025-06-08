@@ -43,6 +43,10 @@ export const IPC_CHANNELS = {
   SERVER_CONSOLE_ERROR: 'server-console-error',
   SERVER_STATUS_UPDATE: 'server-status-update',
   JAVA_DETECT_VERSION: 'java-detect-version',
+  //server list handlers
+  GET_SERVER_LIST: 'GET_SERVER_LIST',
+  ADD_SERVER: 'ADD_SERVER',
+  REMOVE_SERVER: 'REMOVE_SERVER',
 } as const; 
 
 export interface SystemInfo {

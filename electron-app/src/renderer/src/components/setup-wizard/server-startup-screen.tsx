@@ -11,6 +11,7 @@ import { useServerStartupStore } from "@/stores/server-startup-store"
 import { IPC_CHANNELS, StatusMessage as StatusMessageType } from "@shared/types"
 import { useServerStore, TunnelStatus } from "@/lib/store"
 import React from "react"
+import { useServerListStore } from "@/lib/server-list-store"
 
 const devLog = (...args: any[]) => {
   if (import.meta.env.DEV) {
@@ -274,6 +275,22 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       const { assignedDomain, staticIp4 } = result.data
       if (assignedDomain) {
         setDnsAddress(assignedDomain) // Remove port number
+        // Add server to the list after successful tunnel creation
+        const addServer = useServerListStore.getState().addServer;
+        await addServer({
+          id: Date.now().toString(),
+          name: "Vanilla World",
+          status: "online",
+          version: "1.21.5",
+          onlinePlayers: 0,
+          maxPlayers: 20,
+          lastActive: Date.now(),
+          serverPath: config.serverDirectory || "",
+          playitDomain: assignedDomain,
+          gameMode: "survival"
+        });
+        // Refresh the server list after adding
+        await useServerListStore.getState().refresh();
       } else if (staticIp4) {
         setDnsAddress(staticIp4) // Remove port number
       } else {

@@ -1,10 +1,12 @@
 import React, { useEffect } from "react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { ServersList } from "@/components/servers-list/servers-list";
 import { SetupWizard } from "@/components/setup-wizard/setup-wizard";
 import DashboardPage from "@/app/dashboard/page";
 import ServerStartupPage from "@/app/server-startup/page";
 import { Toaster } from "@/components/ui/toaster";
 import { usePerformanceSettingsStore } from "@/stores/step-stores";
+import { CloseButton } from "@/components/ui/CloseButton";
 
 // Helper for dev-only logging
 const devLog = (...args: any[]) => {
@@ -63,8 +65,10 @@ function App(): React.JSX.Element {
   return (
     <>
       <MemoryRouter>
+        <CloseButton />
         <Routes>
-          <Route path="/" element={<SetupWizard />} />
+          <Route path="/" element={<ServersList />} />
+          <Route path="/create-server" element={<SetupWizard />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/server-startup" element={<ServerStartupPage />} />
         </Routes>

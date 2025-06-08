@@ -1,13 +1,11 @@
 "use client"
 
 import type React from "react"
+import { Server } from "@/lib/server-list-store"
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Plus, Search, Filter, Power, Trash2 } from "lucide-react"
-import { useNavigate } from "react-router-dom"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,98 +13,74 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import { useNavigate } from "react-router-dom"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { useServersStore } from "@/lib/servers-store"
+import { useServerListStore } from "@/lib/server-list-store"
+
+function formatLastActive(timestamp: number) {
+  const now = Date.now()
+  const diff = now - timestamp
+  if (diff < 60000) return "Just now"
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} minute${Math.floor(diff / 60000) > 1 ? "s" : ""} ago`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} hour${Math.floor(diff / 3600000) > 1 ? "s" : ""} ago`
+  return `${Math.floor(diff / 86400000)} day${Math.floor(diff / 86400000) > 1 ? "s" : ""} ago`
+}
 
 export function ServersList() {
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { servers, toggleServerStatus, deleteServer } = useServersStore()
+  const servers = useServerListStore((s) => s.servers)
+  const refresh = useServerListStore((s) => s.refresh)
+  const toggleServerStatus = useServerListStore((s) => s.toggleServerStatus)
+  const removeServer = useServerListStore((s) => s.removeServer)
+
+  // Call refresh only once on mount to avoid infinite loop
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [gameModeFilter, setGameModeFilter] = useState<string | null>(null)
 
-  const [filteredServers, setFilteredServers] = useState(servers)
 
-  // Apply filters when any filter changes
-  useEffect(() => {
-    let result = servers
-
-    // Apply search filter
-    if (searchQuery) {
-      result = result.filter((server) => server.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    }
-
-    // Apply status filter
-    if (statusFilter) {
-      result = result.filter((server) => server.status === statusFilter)
-    }
-
-    // Apply game mode filter
-    if (gameModeFilter) {
-      result = result.filter((server) => server.gameMode === gameModeFilter)
-    }
-
-    setFilteredServers(result)
-  }, [servers, searchQuery, statusFilter, gameModeFilter])
+  const filteredServers = servers.filter((server) => {
+    const matchesSearch =
+      server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      server.playitDomain.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesStatus = statusFilter ? server.status === statusFilter : true
+    const matchesGameMode = gameModeFilter ? server.gameMode === gameModeFilter : true
+    return matchesSearch && matchesStatus && matchesGameMode
+  })
 
   const handleCreateServer = () => {
     navigate("/create-server")
   }
 
   const handleServerClick = (serverId: string) => {
-    navigate(`/server/${serverId}`)
+    navigate("/dashboard")
   }
 
   const handleToggleStatus = (e: React.MouseEvent, serverId: string, currentStatus: string) => {
     e.stopPropagation()
     toggleServerStatus(serverId)
-
     toast({
       title: `Server ${currentStatus === "online" ? "stopping" : "starting"}`,
       description: `${currentStatus === "online" ? "Stopping" : "Starting"} server...`,
     })
   }
 
-  const handleDeleteServer = (e: React.MouseEvent, serverId: string, serverName: string) => {
+  const handleDeleteServer = (e: React.MouseEvent, server: Server) => {
     e.stopPropagation()
-
-    // In a real app, you'd want to show a confirmation dialog here
-    if (confirm(`Are you sure you want to delete "${serverName}"?`)) {
-      deleteServer(serverId)
-
+    if (confirm(`Are you sure you want to delete "${server.name}"? This will permanently delete the server directory from disk.`)) {
+      removeServer(server.serverPath)
       toast({
         title: "Server deleted",
-        description: `"${serverName}" has been deleted.`,
+        description: `"${server.name}" and its files have been deleted.`,
       })
     }
-  }
-
-  const formatLastActive = (timestamp: number) => {
-    const now = Date.now()
-    const diff = now - timestamp
-
-    // Less than a minute
-    if (diff < 60000) {
-      return "Just now"
-    }
-
-    // Less than an hour
-    if (diff < 3600000) {
-      const minutes = Math.floor(diff / 60000)
-      return `${minutes} minute${minutes > 1 ? "s" : ""} ago`
-    }
-
-    // Less than a day
-    if (diff < 86400000) {
-      const hours = Math.floor(diff / 3600000)
-      return `${hours} hour${hours > 1 ? "s" : ""} ago`
-    }
-
-    // More than a day
-    const days = Math.floor(diff / 86400000)
-    return `${days} day${days > 1 ? "s" : ""} ago`
   }
 
   return (
@@ -131,7 +105,6 @@ export function ServersList() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="flex items-center gap-2">
@@ -208,7 +181,7 @@ export function ServersList() {
                       <h3 className="text-xl font-semibold text-linen">{server.name}</h3>
                       <div className="flex items-center gap-2">
                         <Badge
-                          className={`${
+                          className={`$${
                             server.status === "online"
                               ? "bg-green-500/20 text-green-400 border-green-500/50"
                               : "bg-red-500/20 text-red-400 border-red-500/50"
@@ -225,11 +198,9 @@ export function ServersList() {
                           )}
                           {server.status === "online" ? "Online" : "Offline"}
                         </Badge>
-                        <span className="text-xs text-cool-gray">{server.gameMode}</span>
                       </div>
                     </div>
                   </div>
-
                   <div className="flex justify-between items-center mb-4">
                     <div className="text-sm text-cool-gray">
                       <span className="text-linen">
@@ -239,7 +210,6 @@ export function ServersList() {
                     </div>
                     <div className="text-xs text-cool-gray">Last active: {formatLastActive(server.lastActive)}</div>
                   </div>
-
                   <div className="flex justify-between items-center">
                     <div className="text-xs text-cool-gray">{server.version}</div>
                     <div className="flex gap-2">
@@ -256,13 +226,15 @@ export function ServersList() {
                         variant="outline"
                         size="sm"
                         className="h-8 w-8 p-0"
-                        onClick={(e) => handleDeleteServer(e, server.id, server.name)}
+                        onClick={(e) => handleDeleteServer(e, server)}
                       >
                         <Trash2 size={14} className="text-red-400" />
                         <span className="sr-only">Delete server</span>
                       </Button>
                     </div>
                   </div>
+                  <div className="text-xs text-cool-gray mt-2">Path: {server.serverPath}</div>
+                  <div className="text-xs text-cool-gray mt-1">Domain: {server.playitDomain}</div>
                 </div>
               </motion.div>
             ))}

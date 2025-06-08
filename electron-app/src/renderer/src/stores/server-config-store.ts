@@ -4,14 +4,13 @@ import { IPC_CHANNELS } from '../../../shared/types';
 export type WizardStep = "detect" | "flavor" | "modpack" | "world" | "performance" | "review"
 
 export type ServerConfig = {
-  minecraftPath: string | null
   isModded: boolean
   serverType: "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit"
   modpackPath?: string
   modpackName?: string
   ram: number
   hostingMode: "play+host" | "host"
-  javaPath?: string
+  javaPath: string
   serverDirectory?: string
   worldPath?: string
   worldName?: string
@@ -31,11 +30,11 @@ interface ServerConfigState {
 }
 
 const initialConfig: ServerConfig = {
-  minecraftPath: "C:\\Users\\Username\\AppData\\Roaming\\.minecraft",
   isModded: false,
   serverType: "vanilla",
   ram: 4,
   hostingMode: "play+host",
+  javaPath: "", // Will be set by Java detection
   // serverDirectory: "C:\\MinecraftServers\\MyServer", // Will be set by fetchDefaultServerDirectory if not already set
 }
 
