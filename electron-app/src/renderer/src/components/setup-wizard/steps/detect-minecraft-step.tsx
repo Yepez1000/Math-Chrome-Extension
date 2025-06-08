@@ -13,6 +13,37 @@ interface DetectMinecraftStepProps {
   onComplete: () => void
 }
 
+function ManualJavaSelectButton({ onClick, isLoading, error }: {
+  onClick: () => void,
+  isLoading: boolean,
+  error: string | null
+}) {
+  return (
+    <>
+      <Button
+        variant="outline"
+        className="w-full max-w-md border-cool-gray text-linen hover:bg-cool-gray/10 flex items-center justify-center gap-2"
+        onClick={onClick}
+        disabled={isLoading}
+      >
+        {isLoading ? 'Selecting...' : 'Select Java Manually'}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="ml-1 cursor-pointer"><Info className="h-4 w-4 text-cool-gray" /></span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-xs text-sm">
+              You can select either a <b>java.exe</b> file directly, or a folder that contains it.<br />
+              If you select a folder, the app will search inside (up to 4 levels deep) for a valid <b>java.exe</b>.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </Button>
+      {error && <div className="text-red-400 text-sm mt-2">{error}</div>}
+    </>
+  );
+}
+
 export function DetectMinecraftStep({ config, updateConfig, onComplete }: DetectMinecraftStepProps) {
   const [isDetecting, setIsDetecting] = useState(true)
   const [detectionStatus, setDetectionStatus] = useState<'detecting' | 'detected_supported' | 'detected_unsupported'>('detecting')
@@ -60,7 +91,7 @@ export function DetectMinecraftStep({ config, updateConfig, onComplete }: Detect
         setErrorMessage(
           `No Java installation found. Minecraft server requires Java 17 or higher.\n\n` +
           `To install Java 17:\n` +
-          `1. Download OpenJDK 17 from https://adoptium.net\n` +
+          `1. Download OpenJDK from https://adoptium.net\n` +
           `2. Run the installer\n` +
           `   - Choose "Install for all users" (recommended) or "Install for current user"\n` +
           `   - The installer will automatically add Java to your system\n` +
@@ -139,29 +170,7 @@ export function DetectMinecraftStep({ config, updateConfig, onComplete }: Detect
             <Button onClick={onComplete} className="w-full max-w-md bg-linen text-night hover:bg-linen/90" disabled={!isContinueEnabled}>
               Continue
             </Button>
-            <Button
-              variant="outline"
-              className="w-full max-w-md border-cool-gray text-linen hover:bg-cool-gray/10 flex items-center justify-center gap-2"
-              onClick={handleManualSelect}
-              disabled={isManualLoading}
-            >
-              {isManualLoading ? 'Selecting...' : 'Select Java Manually'}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="ml-1 cursor-pointer"><Info className="h-4 w-4 text-cool-gray" /></span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-xs text-sm">
-                    You can select either a <b>java.exe</b> file directly, or a folder that contains it.<br/>
-                    If you select a folder, the app will search inside (up to 4 levels deep) for a valid <b>java.exe</b>.<br/>
-                    <br/>
-                    Common locations:<br/>
-                    <span className="text-xs">C:\Program Files\Eclipse Adoptium<br/>C:\Program Files\Java</span>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </Button>
-            {manualError && <div className="text-red-400 text-sm mt-2">{manualError}</div>}
+            <ManualJavaSelectButton onClick={handleManualSelect} isLoading={isManualLoading} error={manualError} />
           </motion.div>
         </motion.div>
       )}
@@ -193,29 +202,7 @@ export function DetectMinecraftStep({ config, updateConfig, onComplete }: Detect
             >
               Continue Anyway (May Not Work)
             </Button>
-            <Button
-              variant="outline"
-              className="w-full max-w-md border-cool-gray text-linen hover:bg-cool-gray/10 flex items-center justify-center gap-2"
-              onClick={handleManualSelect}
-              disabled={isManualLoading}
-            >
-              {isManualLoading ? 'Selecting...' : 'Select Java Manually'}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="ml-1 cursor-pointer"><Info className="h-4 w-4 text-cool-gray" /></span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-xs text-sm">
-                    You can select either a <b>java.exe</b> file directly, or a folder that contains it.<br/>
-                    If you select a folder, the app will search inside (up to 4 levels deep) for a valid <b>java.exe</b>.<br/>
-                    <br/>
-                    Common locations:<br/>
-                    <span className="text-xs">C:\Program Files\Eclipse Adoptium<br/>C:\Program Files\Java</span>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </Button>
-            {manualError && <div className="text-red-400 text-sm mt-2">{manualError}</div>}
+            <ManualJavaSelectButton onClick={handleManualSelect} isLoading={isManualLoading} error={manualError} />
           </motion.div>
         </motion.div>
       )}
