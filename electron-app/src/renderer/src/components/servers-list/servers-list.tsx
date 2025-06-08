@@ -5,7 +5,7 @@ import { Server } from "@/lib/server-list-store"
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Plus, Search, Filter, Power, Trash2 } from "lucide-react"
+import { Plus, Search, Filter, Power, Trash2, Pencil } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +35,7 @@ export function ServersList() {
   const refresh = useServerListStore((s) => s.refresh)
   const toggleServerStatus = useServerListStore((s) => s.toggleServerStatus)
   const removeServer = useServerListStore((s) => s.removeServer)
+  const renameServer = useServerListStore((s) => s.renameServer)
 
   // Call refresh only once on mount to avoid infinite loop
   useEffect(() => {
@@ -44,7 +45,8 @@ export function ServersList() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [gameModeFilter, setGameModeFilter] = useState<string | null>(null)
-
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState("")
 
   const filteredServers = servers.filter((server) => {
     const matchesSearch =
@@ -60,7 +62,7 @@ export function ServersList() {
   }
 
   const handleServerClick = (serverId: string) => {
-    navigate("/dashboard")
+    navigate(`/dashboard?serverId=${serverId}`)
   }
 
   const handleToggleStatus = (e: React.MouseEvent, serverId: string, currentStatus: string) => {
@@ -177,28 +179,54 @@ export function ServersList() {
                         className="h-8 w-8 rounded-full"
                       />
                     </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-linen">{server.name}</h3>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          className={`$${
-                            server.status === "online"
-                              ? "bg-green-500/20 text-green-400 border-green-500/50"
-                              : "bg-red-500/20 text-red-400 border-red-500/50"
-                          } border`}
-                        >
-                          {server.status === "online" ? (
-                            <motion.div
-                              className="h-2 w-2 rounded-full bg-green-400 mr-1.5"
-                              animate={{ opacity: [1, 0.5, 1] }}
-                              transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                            />
-                          ) : (
-                            <div className="h-2 w-2 rounded-full bg-red-400 mr-1.5" />
-                          )}
-                          {server.status === "online" ? "Online" : "Offline"}
-                        </Badge>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      {editingId === server.id ? (
+                        <form onSubmit={e => { e.preventDefault(); renameServer(server.id, editValue); setEditingId(null); }}>
+                          <input
+                            className="bg-night border-cool-gray/30 text-linen rounded px-2 py-1 text-xl font-semibold w-32"
+                            value={editValue}
+                            onChange={e => setEditValue(e.target.value)}
+                            autoFocus
+                            onBlur={e => { e.stopPropagation(); setEditingId(null); }}
+                            onClick={e => e.stopPropagation()}
+                            onFocus={e => e.stopPropagation()}
+                          />
+                        </form>
+                      ) : (
+                        <>
+                          <h3 className="text-xl font-semibold text-linen">{server.name}</h3>
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              setEditingId(server.id);
+                              setEditValue(server.name);
+                            }}
+                            className="ml-1 p-1 hover:bg-cool-gray/20 rounded"
+                          >
+                            <Pencil className="h-4 w-4 text-cool-gray" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        className={`$${
+                          server.status === "online"
+                            ? "bg-green-500/20 text-green-400 border-green-500/50"
+                            : "bg-red-500/20 text-red-400 border-red-500/50"
+                        } border`}
+                      >
+                        {server.status === "online" ? (
+                          <motion.div
+                            className="h-2 w-2 rounded-full bg-green-400 mr-1.5"
+                            animate={{ opacity: [1, 0.5, 1] }}
+                            transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+                          />
+                        ) : (
+                          <div className="h-2 w-2 rounded-full bg-red-400 mr-1.5" />
+                        )}
+                        {server.status === "online" ? "Online" : "Offline"}
+                      </Badge>
                     </div>
                   </div>
                   <div className="flex justify-between items-center mb-4">

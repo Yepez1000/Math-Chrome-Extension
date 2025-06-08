@@ -22,6 +22,7 @@ type ServerListState = {
   removeServer: (serverPath: string) => Promise<void>;
   toggleServerStatus: (serverId: string) => void;
   deleteServer: (serverId: string) => void;
+  renameServer: (serverId: string, newName: string) => Promise<void>;
 };
 
 const DEFAULT_ICON = "/placeholder.svg?height=40&width=40";
@@ -57,5 +58,14 @@ export const useServerListStore = create<ServerListState>((set, get) => ({
     set((state) => ({
       servers: state.servers.filter((s) => s.id !== serverId),
     }));
+  },
+  renameServer: async (serverId: string, newName: string) => {
+    const server = get().servers.find(s => s.id === serverId);
+    if (!server) return;
+    const updatedList = await window.electronAPI.ipcRenderer.invoke(
+      IPC_CHANNELS.RENAME_SERVER,
+      { serverId, newName }
+    );
+    set({ servers: updatedList });
   },
 })); 

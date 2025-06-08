@@ -48,4 +48,14 @@ export function registerServerListHandlers() {
     }
     return list;
   });
+
+  // IPC: Rename server
+  ipcMain.handle(IPC_CHANNELS.RENAME_SERVER, async (_event, { serverId, newName }) => {
+    const list = await readServerList();
+    const updatedList = list.map((s: any) =>
+      s.id === serverId ? { ...s, name: newName } : s
+    );
+    await writeServerList(updatedList);
+    return updatedList;
+  });
 } 
