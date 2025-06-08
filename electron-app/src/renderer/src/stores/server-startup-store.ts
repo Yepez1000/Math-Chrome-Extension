@@ -9,6 +9,12 @@ type StatusMessage = {
   id: string // Add unique ID
 }
 
+type ConsoleMessage = {
+  text: string
+  isError: boolean
+  timestamp: number
+}
+
 interface ServerStartupState {
   statusMessages: StatusMessage[]
   currentStep: number
@@ -18,6 +24,10 @@ interface ServerStartupState {
   dnsAddress: string | null
   playitTunnelStatusDetails: string | null
   minecraftServerStatusDetails: string | null
+  // Console-related state - using combined array to maintain chronological order
+  consoleMessages: ConsoleMessage[]
+  showConsole: boolean
+  consoleAutoScroll: boolean
   addStatusMessage: (message: Omit<StatusMessage, 'id'>) => void
   updateLastStatusMessage: (status: StatusMessage["status"]) => void
   setCurrentStep: (step: number) => void
@@ -28,22 +38,14 @@ interface ServerStartupState {
   reset: () => void
   setPlayitTunnelStatusDetails: (details: string | null) => void
   setMinecraftServerStatusDetails: (details: string | null) => void
+  // Console actions
+  addConsoleMessage: (message: string, isError?: boolean) => void
+  setShowConsole: (show: boolean) => void
+  setConsoleAutoScroll: (autoScroll: boolean) => void
+  clearConsoleMessages: () => void
 }
 
-interface ServerStartupActions {
-  addStatusMessage: (message: StatusMessage) => void
-  updateLastStatusMessage: (status: StatusMessage["status"]) => void
-  setCurrentStep: (step: number) => void
-  setIsComplete: (isComplete: boolean) => void
-  setIsError: (isError: boolean) => void
-  setError: (error: string | null) => void
-  setDnsAddress: (address: string | null) => void
-  reset: () => void
-  setPlayitTunnelStatusDetails: (details: string | null) => void
-  setMinecraftServerStatusDetails: (details: string | null) => void
-}
-
-type ServerStartupStore = ServerStartupState & ServerStartupActions;
+type ServerStartupStore = ServerStartupState;
 
 const initialState = {
   statusMessages: [],
@@ -54,6 +56,10 @@ const initialState = {
   dnsAddress: null,
   playitTunnelStatusDetails: null,
   minecraftServerStatusDetails: null,
+  // Console initial state
+  consoleMessages: [],
+  showConsole: false,
+  consoleAutoScroll: true,
 }
 
 export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
@@ -89,6 +95,36 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   setPlayitTunnelStatusDetails: (details) => set({ playitTunnelStatusDetails: details }),
 
   setMinecraftServerStatusDetails: (details) => set({ minecraftServerStatusDetails: details }),
+
+  // Console actions
+  addConsoleMessage: (message, isError = false) =>
+    set((state) => {
+      const newMessage = {
+        text: message,
+        isError,
+        timestamp: Date.now()
+      };
+      
+      const updatedMessages = [...state.consoleMessages, newMessage];
+      
+      // Maximum console message limit to prevent memory bloat
+      const MAX_CONSOLE_MESSAGES = 1000;
+      
+      // Trim older messages if we exceed the limit
+      const trimmedMessages = updatedMessages.length > MAX_CONSOLE_MESSAGES
+        ? updatedMessages.slice(-MAX_CONSOLE_MESSAGES) // Keep the last 1000 messages
+        : updatedMessages;
+      
+      return {
+        consoleMessages: trimmedMessages,
+      };
+    }),
+
+  setShowConsole: (show) => set({ showConsole: show }),
+
+  setConsoleAutoScroll: (autoScroll) => set({ consoleAutoScroll: autoScroll }),
+
+  clearConsoleMessages: () => set({ consoleMessages: [] }),
 
   // Note: The executeStartupSequence action is defined and used in the component for now.
   // IPC listeners will be set up in the component and call store actions to update state.

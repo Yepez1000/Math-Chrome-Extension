@@ -84,6 +84,9 @@ const api: ElectronAPI = {
         IPC_CHANNELS.TUNNEL_ERROR,
         IPC_CHANNELS.TUNNEL_STATUS_UPDATE,
         IPC_CHANNELS.CLAIM_LINK,
+        IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
+        IPC_CHANNELS.SERVER_CONSOLE_ERROR,
+        IPC_CHANNELS.SERVER_STATUS_UPDATE,
         // Add other removeListener channels as needed
       ] as const
       if ((validRemoveListenerChannels as ReadonlyArray<string>).includes(channel)) {
@@ -96,6 +99,9 @@ const api: ElectronAPI = {
         IPC_CHANNELS.TUNNEL_ERROR,
         IPC_CHANNELS.TUNNEL_STATUS_UPDATE,
         IPC_CHANNELS.CLAIM_LINK,
+        IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
+        IPC_CHANNELS.SERVER_CONSOLE_ERROR,
+        IPC_CHANNELS.SERVER_STATUS_UPDATE,
         // Add other removeAllListeners channels as needed
       ] as const
       if ((validRemoveAllListenersChannels as ReadonlyArray<string>).includes(channel)) {

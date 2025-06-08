@@ -4,13 +4,19 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { motion, AnimatePresence } from "framer-motion"
-import { Loader2, CheckCircle, XCircle, Copy, ExternalLink, AlertTriangle } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, Copy, ExternalLink, AlertTriangle, ChevronDown, ChevronUp, Terminal } from "lucide-react"
 import { useToast } from "@renderer/hooks/use-toast"
 import { useServerConfigStore } from "@/stores/server-config-store"
 import { useServerStartupStore } from "@/stores/server-startup-store"
 import { IPC_CHANNELS, StatusMessage as StatusMessageType } from "@shared/types"
 import { useServerStore, TunnelStatus } from "@/lib/store"
 import React from "react"
+
+const devLog = (...args: any[]) => {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+};
 
 interface ServerStartupScreenProps {
   onComplete: () => void
@@ -23,6 +29,194 @@ interface StartupStep {
   handler: typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS] | "prepareServerFiles" | "startMinecraft"; // Corrected type to include string values from IPC_CHANNELS
   error: string;
 }
+
+// Console component
+const ServerConsole = React.memo(() => {
+  const { 
+    consoleMessages, 
+    showConsole, 
+    consoleAutoScroll,
+    setShowConsole, 
+    setConsoleAutoScroll 
+  } = useServerStartupStore()
+  
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const mutationObserverRef = useRef<MutationObserver | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const [userScrolled, setUserScrolled] = useState(false)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isScrollingToBottomRef = useRef(false)
+
+  // Throttled scroll handler to avoid excessive state updates
+  const throttledScrollHandler = useCallback(() => {
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current)
+    }
+    
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (scrollRef.current && !isScrollingToBottomRef.current) {
+        const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+        const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5 // Reduced threshold for better detection
+        
+        if (isAtBottom && userScrolled) {
+          setUserScrolled(false)
+          setConsoleAutoScroll(true)
+        } else if (!isAtBottom && !userScrolled) {
+          setUserScrolled(true)
+          setConsoleAutoScroll(false)
+        }
+      }
+    }, 100) // 100ms throttle
+  }, [userScrolled, setConsoleAutoScroll])
+
+  // Reliable scroll to bottom function
+  const scrollToBottomReliably = useCallback(() => {
+    if (scrollRef.current) {
+      isScrollingToBottomRef.current = true
+      
+      // Use requestAnimationFrame to ensure DOM is painted
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+            // Reset flag after a short delay
+            setTimeout(() => {
+              isScrollingToBottomRef.current = false
+            }, 50)
+          }
+        })
+      })
+    }
+  }, [])
+
+  // Manual scroll to bottom button handler
+  const handleScrollToBottom = useCallback(() => {
+    setUserScrolled(false)
+    setConsoleAutoScroll(true)
+    scrollToBottomReliably()
+  }, [scrollToBottomReliably, setConsoleAutoScroll])
+
+  // Set up MutationObserver to watch for DOM changes
+  useEffect(() => {
+    const scrollContainer = scrollRef.current
+    if (!scrollContainer) return
+
+    // MutationObserver to watch for content changes
+    mutationObserverRef.current = new MutationObserver(() => {
+      if (consoleAutoScroll && !userScrolled) {
+        scrollToBottomReliably()
+      }
+    })
+
+    // ResizeObserver to watch for container size changes
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserverRef.current = new ResizeObserver(() => {
+        if (consoleAutoScroll && !userScrolled) {
+          scrollToBottomReliably()
+        }
+      })
+      resizeObserverRef.current.observe(scrollContainer)
+    }
+
+    // Start observing
+    mutationObserverRef.current.observe(scrollContainer, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    })
+
+    return () => {
+      mutationObserverRef.current?.disconnect()
+      resizeObserverRef.current?.disconnect()
+    }
+  }, [consoleAutoScroll, userScrolled, scrollToBottomReliably])
+
+  // Auto-scroll when new messages arrive
+  useEffect(() => {
+    if (consoleAutoScroll && !userScrolled && consoleMessages.length > 0) {
+      scrollToBottomReliably()
+    }
+  }, [consoleMessages.length, consoleAutoScroll, userScrolled, scrollToBottomReliably])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const toggleConsole = () => {
+    setShowConsole(!showConsole)
+  }
+
+  return (
+    <div className="mt-4 space-y-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={toggleConsole}
+        className="flex items-center gap-2 text-cool-gray border-cool-gray/30 hover:bg-cool-gray/10"
+      >
+        <Terminal className="h-4 w-4" />
+        {showConsole ? 'Hide Console' : 'Show Console'}
+        {showConsole ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </Button>
+
+      <AnimatePresence>
+        {showConsole && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="overflow-hidden"
+          >
+            <Card className="border-cool-gray/30 bg-night">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-linen">Server Console</h4>
+                                     {userScrolled && (
+                     <Button
+                       variant="outline"
+                       size="sm"
+                       onClick={handleScrollToBottom}
+                       className="text-xs border-cool-gray/30 text-cool-gray hover:bg-cool-gray/10"
+                     >
+                       Scroll to bottom
+                     </Button>
+                   )}
+                </div>
+                                 <div
+                   ref={scrollRef}
+                   onScroll={throttledScrollHandler}
+                   className="bg-space-cadet rounded p-3 h-72 overflow-y-auto font-mono text-sm text-linen"
+                   style={{ scrollBehavior: consoleAutoScroll ? 'smooth' : 'auto' }}
+                 >
+                   {consoleMessages.length === 0 ? (
+                     <div className="text-cool-gray italic">Waiting for server output...</div>
+                   ) : (
+                     consoleMessages.map((message, index) => (
+                       <div
+                         key={`${message.timestamp}-${index}`}
+                         className={`mb-1 whitespace-pre-wrap ${
+                           message.isError ? 'text-red-400' : 'text-linen'
+                         }`}
+                       >
+                         {message.isError ? `ERROR: ${message.text}` : message.text}
+                       </div>
+                     ))
+                   )}
+                 </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+})
 
 export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreenProps) {
   const { toast } = useToast()
@@ -44,13 +238,13 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     setPlayitTunnelStatusDetails,
     minecraftServerStatusDetails,
     setMinecraftServerStatusDetails,
+    // Console state
+    addConsoleMessage,
+    clearConsoleMessages,
   } = useServerStartupStore()
 
   const { setTunnelStatus, setTunnelAddress, setTunnelError, tunnel } = useServerStore()
   const tunnelAddress = tunnel.address
-
-  // State for server console output
-  // const [serverConsoleOutput, setServerConsoleOutput] = useState<string[]>([]);
 
   // Define the startup steps
   const startupSteps: StartupStep[] = [
@@ -92,7 +286,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
   const handlePrepareFilesStep = async () => {
     // Check for javaPath before proceeding
-    console.log('Java path being used for prepare:', config.javaPath);
+    devLog('Java path being used for prepare:', config.javaPath);
     if (!config.javaPath) {
       throw new Error('Java path is missing from config. Please re-run Java detection.');
     }
@@ -110,7 +304,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
   const handleStartServerStep = async () => {
     // Check for javaPath before proceeding
-    console.log('Java path being used for start:', config.javaPath);
+    devLog('Java path being used for start:', config.javaPath);
     if (!config.javaPath) {
       throw new Error('Java path is missing from config. Please re-run Java detection.');
     }
@@ -134,8 +328,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       case IPC_CHANNELS.SERVER_START:
         return handleStartServerStep();
       default:
-        // Use the global mock function for any handlers not explicitly defined here
-        return globalMockIpcCalls(step.handler as string);
+        return { success: true }
     }
   };
 
@@ -179,19 +372,10 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     }
   }, [startupSteps, addStatusMessage, updateLastStatusMessage, setCurrentStep, setIsComplete, setIsError, setDnsAddress, config.serverDirectory, config.serverType, config.ram, config.javaPath]); // Added config dependencies
 
-  // Keep the mock IPC calls for other steps until they are implemented
-  // Renamed to avoid conflict if mockIpcCalls is defined within the component function
-  const globalMockIpcCalls = async (handler: string) => {
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    // Simulate success for mock steps
-    console.log(`Mock handler called for: ${handler}`)
-    return { success: true } // Mocked success response
-  }
-
   // Use useRef to store listener functions to ensure stability
   const listeners = useRef({
     handleTunnelStatus: (data: { status: string; address?: string }) => {
-      console.log("Tunnel Status Update:", data)
+      devLog("Tunnel Status Update:", data)
 
       // Map the incoming status string to a valid TunnelStatus type
       let mappedStatus: TunnelStatus = "starting"; // Default to starting
@@ -218,7 +402,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       }
     },
     handleTunnelAddress: (_event: any, data: any) => {
-      console.log("Tunnel Address:", data)
+      devLog("Tunnel Address:", data)
       setTunnelAddress(data.address)
     },
     handleTunnelError: (_event: any, data: any) => {
@@ -227,14 +411,19 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       addStatusMessage({ message: `Tunnel Runtime Error: ${data.message}`, status: "error" })
     },
     // Handler for server stdout
-    // handleServerOutput: (data: string) => {
-    //   setServerConsoleOutput(prev => [...prev, data]);
-    // },
+    handleServerOutput: (data: string) => {
+      addConsoleMessage(data, false);
+    },
     // Handler for server stderr
-    // handleServerErrorOutput: (data: string) => {
-    //   // You might want to format error output differently in the UI
-    //   setServerConsoleOutput(prev => [...prev, `ERROR: ${data}`]);
-    // },
+    handleServerErrorOutput: (data: string) => {
+      addConsoleMessage(data, true);
+    },
+    // Handler for server status updates
+    handleServerStatusUpdate: (data: { status?: string }) => {
+      if (data.status) {
+        setMinecraftServerStatusDetails(data.status);
+      }
+    },
   })
 
   // Start the sequence when component mounts and set up listeners once
@@ -245,28 +434,29 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       hasRun.current = true
     }
 
+    // Clear previous console output when starting
+    clearConsoleMessages()
+
     // Add listeners for tunnel status updates from playitHandlers
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, listeners.current.handleTunnelStatus)
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ADDRESS, listeners.current.handleTunnelAddress)
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, listeners.current.handleTunnelError)
 
     // Add listener for server status updates
-    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, (data: { status?: string }) => {
-      if (data.status) {
-        setMinecraftServerStatusDetails(data.status);
-      }
-    });
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, listeners.current.handleServerStatusUpdate);
+
+    // Add listeners for server console output
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, listeners.current.handleServerOutput);
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_ERROR, listeners.current.handleServerErrorOutput);
 
     // Cleanup listeners on unmount
     return () => {
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, listeners.current.handleTunnelStatus)
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_ADDRESS, listeners.current.handleTunnelAddress)
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_ERROR, listeners.current.handleTunnelError)
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, (data: { status?: string }) => {
-        if (data.status) {
-          setMinecraftServerStatusDetails(data.status);
-        }
-      });
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, listeners.current.handleServerStatusUpdate);
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, listeners.current.handleServerOutput);
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_ERROR, listeners.current.handleServerErrorOutput);
     }
   }, []) // Remove executeStep from dependencies since it's stable
 
@@ -371,6 +561,9 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     return null;
   };
 
+  // Determine if console should be shown (during any server operation)
+  const shouldShowConsoleToggle = currentStep >= 0 && !isComplete && !isError;
+
   return (
     <Card className="w-full bg-space-cadet border-cool-gray/30 shadow-xl">
       <CardHeader>
@@ -399,6 +592,9 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
                       <StatusMessage key={statusMessage.id} {...statusMessage} />
                     ))}
                   </AnimatePresence>
+
+                  {/* Show console toggle and console after "Preparing server files..." */}
+                  {shouldShowConsoleToggle && <ServerConsole />}
 
                   {renderProgressText() && (
                       <motion.div
