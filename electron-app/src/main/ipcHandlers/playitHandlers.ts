@@ -169,7 +169,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
         devLog('Root data GET response status:', rootDataResp.status);
       } catch (error) {
         devError(`Root data GET request failed: ${error}`);
-      }
+    }
 
     let binaryPath: string;
     try {
@@ -190,21 +190,21 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
       let claimSignalPromise: Promise<{ type: 'claimCode' | 'visitLink' | 'existingAgent'; value?: string }> | null = null;
 
-      try {
-        playitProcess = spawn(binaryPath, [], {
-          detached: false,
-          windowsHide: false,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          shell: false,
-          env: { 
-            ...process.env, 
-            FORCE_COLOR: '0',
-            TERM: 'dumb',
-            CLICOLOR: '0',
-            NO_COLOR: '1'
-          }
-        });
-
+    try {
+      playitProcess = spawn(binaryPath, [], {
+        detached: false,
+        windowsHide: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false,
+        env: { 
+          ...process.env, 
+          FORCE_COLOR: '0',
+          TERM: 'dumb',
+          CLICOLOR: '0',
+          NO_COLOR: '1'
+        }
+      });
+      
         if (!playitProcess || !playitProcess.stdout) {
            throw new Error('Failed to spawn Playit process or get stdout.');
         }
@@ -213,16 +213,16 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
           let claimCodeMatch: RegExpMatchArray | null = null;
 
           const listener = (data: any) => {
-            const chunk = data.toString();
-            const cleanChunk = chunk
-               .replace(/\x1B/g, '')
-               .replace(/\[2J/g, '')
-               .replace(/\[0m/g, '')
-               .replace(/8/g, '')
-               .replace(/no command provided, doing auto run/g, '')
-               .trim();
+          const chunk = data.toString();
+          const cleanChunk = chunk
+            .replace(/\x1B/g, '')
+            .replace(/\[2J/g, '')
+            .replace(/\[0m/g, '')
+            .replace(/8/g, '')
+            .replace(/no command provided, doing auto run/g, '')
+            .trim();
             devLog('cleanChunk:', cleanChunk);
-            if (cleanChunk) {
+          if (cleanChunk) {
               claimCodeMatch = cleanChunk.match(/Visit link to setup\s*https:\/\/playit\.gg\/claim\/([a-zA-Z0-9]+)(?:\s|$)/);
               if (claimCodeMatch && claimCodeMatch[1] && !claimCodeHandled) {
                 claimCodeHandled = true;
