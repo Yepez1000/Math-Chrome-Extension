@@ -326,6 +326,8 @@ export function registerMinecraftHandlers() {
             const message = data.toString();
             output += message;
             devLog(`Server stdout: ${message}`);
+            // Send console output to renderer
+            _event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, message);
             
             // Check for successful startup
             if (message.includes('Done') || message.includes('For help, type "help"')) {
@@ -337,6 +339,8 @@ export function registerMinecraftHandlers() {
             const message = data.toString();
             errorOutput += message;
             devError(`Server stderr: ${message}`);
+            // Send console error output to renderer
+            _event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, message);
 
             // Check for specific fatal error patterns to proactively stop the process
             if (
@@ -345,7 +349,6 @@ export function registerMinecraftHandlers() {
               message.includes('Error:')
             ) {
               devError('Detected fatal server startup error. Signalling failure and attempting to terminate process.');
-              _event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, message);
               _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
                 success: false, 
                 error: `Server startup failed: ${message}` 
