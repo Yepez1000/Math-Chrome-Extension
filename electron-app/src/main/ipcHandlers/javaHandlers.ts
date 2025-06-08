@@ -1,8 +1,8 @@
 import { ipcMain, dialog } from 'electron';
-import { join, sep } from 'path';
+import { join, /*sep*/ } from 'path';
 import fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../shared/types';
-import { devLog, devError } from '../utils/logger';
+import { /*devLog, */devError } from '../utils/logger';
 import { execAsync } from '../utils/execAsync';
 
 interface JavaVersion {
