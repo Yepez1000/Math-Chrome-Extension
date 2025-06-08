@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build Frontend
+    name: Build and Test
     runs-on: ubuntu-latest
     defaults:
       run:
