@@ -422,6 +422,12 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     handleServerErrorOutput: (data: string) => {
       addConsoleMessage(data, true);
     },
+    // Handler for server status updates
+    handleServerStatusUpdate: (data: { status?: string }) => {
+      if (data.status) {
+        setMinecraftServerStatusDetails(data.status);
+      }
+    },
   })
 
   // Start the sequence when component mounts and set up listeners once
@@ -441,11 +447,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.TUNNEL_ERROR, listeners.current.handleTunnelError)
 
     // Add listener for server status updates
-    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, (data: { status?: string }) => {
-      if (data.status) {
-        setMinecraftServerStatusDetails(data.status);
-      }
-    });
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, listeners.current.handleServerStatusUpdate);
 
     // Add listeners for server console output
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, listeners.current.handleServerOutput);
@@ -456,11 +458,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, listeners.current.handleTunnelStatus)
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_ADDRESS, listeners.current.handleTunnelAddress)
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.TUNNEL_ERROR, listeners.current.handleTunnelError)
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, (data: { status?: string }) => {
-        if (data.status) {
-          setMinecraftServerStatusDetails(data.status);
-        }
-      });
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, listeners.current.handleServerStatusUpdate);
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, listeners.current.handleServerOutput);
       window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_ERROR, listeners.current.handleServerErrorOutput);
     }

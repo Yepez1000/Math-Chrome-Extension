@@ -98,13 +98,27 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
 
   // Console actions
   addConsoleMessage: (message, isError = false) =>
-    set((state) => ({
-      consoleMessages: [...state.consoleMessages, {
+    set((state) => {
+      const newMessage = {
         text: message,
         isError,
         timestamp: Date.now()
-      }],
-    })),
+      };
+      
+      const updatedMessages = [...state.consoleMessages, newMessage];
+      
+      // Maximum console message limit to prevent memory bloat
+      const MAX_CONSOLE_MESSAGES = 1000;
+      
+      // Trim older messages if we exceed the limit
+      const trimmedMessages = updatedMessages.length > MAX_CONSOLE_MESSAGES
+        ? updatedMessages.slice(-MAX_CONSOLE_MESSAGES) // Keep the last 1000 messages
+        : updatedMessages;
+      
+      return {
+        consoleMessages: trimmedMessages,
+      };
+    }),
 
   setShowConsole: (show) => set({ showConsole: show }),
 
