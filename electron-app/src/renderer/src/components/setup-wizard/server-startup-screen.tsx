@@ -12,6 +12,12 @@ import { IPC_CHANNELS, StatusMessage as StatusMessageType } from "@shared/types"
 import { useServerStore, TunnelStatus } from "@/lib/store"
 import React from "react"
 
+const devLog = (...args: any[]) => {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+};
+
 interface ServerStartupScreenProps {
   onComplete: () => void
   onRetry: () => void
@@ -280,7 +286,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
   const handlePrepareFilesStep = async () => {
     // Check for javaPath before proceeding
-    console.log('Java path being used for prepare:', config.javaPath);
+    devLog('Java path being used for prepare:', config.javaPath);
     if (!config.javaPath) {
       throw new Error('Java path is missing from config. Please re-run Java detection.');
     }
@@ -298,7 +304,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
 
   const handleStartServerStep = async () => {
     // Check for javaPath before proceeding
-    console.log('Java path being used for start:', config.javaPath);
+    devLog('Java path being used for start:', config.javaPath);
     if (!config.javaPath) {
       throw new Error('Java path is missing from config. Please re-run Java detection.');
     }
@@ -322,8 +328,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       case IPC_CHANNELS.SERVER_START:
         return handleStartServerStep();
       default:
-        // Use the global mock function for any handlers not explicitly defined here
-        return globalMockIpcCalls(step.handler as string);
+        return { success: true }
     }
   };
 
@@ -367,19 +372,10 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     }
   }, [startupSteps, addStatusMessage, updateLastStatusMessage, setCurrentStep, setIsComplete, setIsError, setDnsAddress, config.serverDirectory, config.serverType, config.ram, config.javaPath]); // Added config dependencies
 
-  // Keep the mock IPC calls for other steps until they are implemented
-  // Renamed to avoid conflict if mockIpcCalls is defined within the component function
-  const globalMockIpcCalls = async (handler: string) => {
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    // Simulate success for mock steps
-    console.log(`Mock handler called for: ${handler}`)
-    return { success: true } // Mocked success response
-  }
-
   // Use useRef to store listener functions to ensure stability
   const listeners = useRef({
     handleTunnelStatus: (data: { status: string; address?: string }) => {
-      console.log("Tunnel Status Update:", data)
+      devLog("Tunnel Status Update:", data)
 
       // Map the incoming status string to a valid TunnelStatus type
       let mappedStatus: TunnelStatus = "starting"; // Default to starting
@@ -406,7 +402,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
       }
     },
     handleTunnelAddress: (_event: any, data: any) => {
-      console.log("Tunnel Address:", data)
+      devLog("Tunnel Address:", data)
       setTunnelAddress(data.address)
     },
     handleTunnelError: (_event: any, data: any) => {
