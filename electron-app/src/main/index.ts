@@ -3,7 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerAllIpcHandlers } from './ipcHandlers'
-import { stopExistingServer } from './services/serverService'
+import { stopExistingServer, activeProcesses } from './services/serverService'
 
 declare global {
   namespace Electron {
@@ -65,16 +65,23 @@ function createWindow(): void {
   });
 
   // Handle explicit app quitting (Ctrl+Q)
-  app.on('before-quit', async () => {
+  app.on('before-quit', async (event) => {
+    event.preventDefault(); // Prevent immediate quit
     app.isQuiting = true;
-    
-    // Save all servers before quitting
-    const { activeProcesses } = require('./services/serverService');
-    await Promise.all(
-      [...activeProcesses.keys()].map((serverId: string) => 
-        stopExistingServer(serverId)
-      )
-    );
+
+    try {
+      await Promise.allSettled(
+        [...activeProcesses.keys()].map(async (serverId) => {
+          try {
+            await stopExistingServer(serverId);
+          } catch (err) {
+            console.error(`Server ${serverId} shutdown error:`, err);
+          }
+        })
+      );
+    } finally {
+      app.quit(); // Force quit after cleanup
+    }
   });
 }
 

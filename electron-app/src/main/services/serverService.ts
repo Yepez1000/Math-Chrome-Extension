@@ -8,7 +8,7 @@ import net from 'net';
 import { IPC_CHANNELS } from '../../shared/types';
 import { promisify } from 'util';
 
-const activeProcesses = new Map<string, ChildProcess>();
+export const activeProcesses = new Map<string, ChildProcess>();
 
 // Pure function: Load config and spawn process
 export async function startExistingServer(serverId: string, serverDirectory: string, javaPath: string): Promise<void> {
