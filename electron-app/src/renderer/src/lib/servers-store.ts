@@ -1,90 +1,102 @@
-import { create } from "zustand"
+import { create } from "zustand";
+import { IPC_CHANNELS } from "@shared/types";
+
+export type ServerStatus = "online" | "offline" | "starting" | "stopping";
+export type GameMode = "survival" | "creative" | "adventure" | "spectator";
 
 export interface Server {
-  id: string
-  name: string
-  status: "online" | "offline" | "starting" | "stopping"
-  version: string
-  gameMode: "survival" | "creative" | "adventure" | "spectator"
-  onlinePlayers: number
-  maxPlayers: number
-  icon?: string
-  lastActive: number // timestamp
+  id: string;
+  name: string;
+  status: ServerStatus;
+  version: string;
+  onlinePlayers: number;
+  maxPlayers: number;
+  lastActive: number; // timestamp
+  serverPath: string;
+  playitDomain?: string;
+  gameMode: GameMode;
+  icon?: string;
 }
 
-interface ServersStore {
-  servers: Server[]
-  addServer: (server: Server) => void
-  updateServer: (id: string, updates: Partial<Server>) => void
-  deleteServer: (id: string) => void
-  toggleServerStatus: (id: string) => void
+interface ServerListState {
+  servers: Server[];
+  selectedServerId: string | null;
+  refresh: () => Promise<void>;
+  addServer: (server: Omit<Server, "id" | "lastActive"> & { id?: string }) => Promise<void>;
+  //updateServer: (id: string, updates: Partial<Server>) => Promise<void>;
+  removeServer: (serverId: string) => Promise<void>;
+  renameServer: (serverId: string, newName: string) => Promise<void>;
+  toggleServerStatus: (serverId: string) => void;
+  selectServer: (serverId: string | null) => void;
 }
 
-// Sample data for demonstration
-const sampleServers: Server[] = [
-  {
-    id: "server-1",
-    name: "Survival World",
-    status: "online",
-    version: "1.19.2",
-    gameMode: "survival",
-    onlinePlayers: 3,
-    maxPlayers: 20,
-    lastActive: Date.now() - 1000 * 60 * 30, // 30 minutes ago
+const DEFAULT_ICON = "/placeholder.svg?height=40&width=40";
+
+export const useServerListStore = create<ServerListState>((set, get) => ({
+  servers: [],
+  selectedServerId: null,
+
+  refresh: async () => {
+    const list = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
+    set({ servers: list });
   },
-  {
-    id: "server-2",
-    name: "Creative Building",
-    status: "offline",
-    version: "1.19.2",
-    gameMode: "creative",
-    onlinePlayers: 0,
-    maxPlayers: 10,
-    lastActive: Date.now() - 1000 * 60 * 60 * 5, // 5 hours ago
+
+  addServer: async (server) => {
+    const serverWithDefaults: Server = {
+      ...server,
+      id: server.id || Date.now().toString(),
+      lastActive: Date.now(),
+      maxPlayers: server.maxPlayers || 20,
+      gameMode: server.gameMode || "survival",
+      icon: server.icon || DEFAULT_ICON,
+      status: "offline",
+      onlinePlayers: 0,
+    };
+    const updatedList = await window.electronAPI.ipcRenderer.invoke(
+      IPC_CHANNELS.ADD_SERVER,
+      serverWithDefaults
+    );
+    set({ servers: updatedList });
   },
-  {
-    id: "server-3",
-    name: "Modded Adventure",
-    status: "online",
-    version: "1.18.2 (Forge)",
-    gameMode: "adventure",
-    onlinePlayers: 2,
-    maxPlayers: 15,
-    lastActive: Date.now() - 1000 * 60 * 10, // 10 minutes ago
+
+  /*updateServer: async (id, updates) => {
+    const updatedList = await window.electronAPI.ipcRenderer.invoke(
+      IPC_CHANNELS.UPDATE_SERVER,
+      { id, updates }
+    );
+    set({ servers: updatedList });
+  },*/
+
+  removeServer: async (serverId) => {
+    const updatedList = await window.electronAPI.ipcRenderer.invoke(
+      IPC_CHANNELS.REMOVE_SERVER,
+      serverId
+    );
+    set({ servers: updatedList });
   },
-]
 
-export const useServersStore = create<ServersStore>((set) => ({
-  servers: sampleServers,
+  renameServer: async (serverId, newName) => {
+    const updatedList = await window.electronAPI.ipcRenderer.invoke(
+      IPC_CHANNELS.RENAME_SERVER,
+      { serverId, newName }
+    );
+    set({ servers: updatedList });
+  },
 
-  addServer: (server) =>
+  toggleServerStatus: (serverId) => {
     set((state) => ({
-      servers: [...state.servers, server],
-    })),
+      servers: state.servers.map((s) =>
+        s.id === serverId
+          ? {
+              ...s,
+              status: s.status === "online" ? "offline" : "online",
+              lastActive: Date.now(),
+              onlinePlayers: s.status === "online" ? 0 : s.onlinePlayers,
+            }
+          : s
+      ),
+    }));
+  },
 
-  updateServer: (id, updates) =>
-    set((state) => ({
-      servers: state.servers.map((server) => (server.id === id ? { ...server, ...updates } : server)),
-    })),
-
-  deleteServer: (id) =>
-    set((state) => ({
-      servers: state.servers.filter((server) => server.id !== id),
-    })),
-
-  toggleServerStatus: (id) =>
-    set((state) => ({
-      servers: state.servers.map((server) => {
-        if (server.id === id) {
-          const newStatus = server.status === "online" ? "offline" : "online"
-          return {
-            ...server,
-            status: newStatus,
-            lastActive: Date.now(),
-            onlinePlayers: newStatus === "offline" ? 0 : server.onlinePlayers,
-          }
-        }
-        return server
-      }),
-    })),
-}))
+  selectServer: (serverId) => set({ selectedServerId: serverId }),
+}));

@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { devtools, persist } from "zustand/middleware"
 import type { LucideIcon } from "lucide-react"
-import type { Server } from "./server-list-store"
+import type { Server } from "./servers-store"
 
 export type TunnelStatus = "idle" | "starting" | "running" | "error" | "stopping"
 export type TunnelState = {

@@ -29,7 +29,6 @@ export function registerServerListHandlers() {
   // IPC: Add server
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_event, server) => {
     const list = await readServerList();
-    if (list.length >= 4) throw new Error('Maximum 4 servers allowed');
     list.push(server);
     await writeServerList(list);
     return list;

@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams } from "react-router-dom"
-import { useServerListStore } from "@/lib/server-list-store"
+import { useServerListStore } from "@/lib/servers-store"
 import { ServerDashboard } from "@/components/dashboard/server-dashboard"
 import { useEffect } from "react"
 import { useServerStore } from "@/lib/store"

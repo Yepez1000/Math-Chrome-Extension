@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { IPC_CHANNELS} from "@shared/types"
+import { useServerConfigStore } from './server-config-store'
+import { useServerListStore } from "@/lib/servers-store"
 
 // Add a counter for generating unique IDs
 let messageIdCounter = 0;
@@ -15,6 +18,12 @@ type ConsoleMessage = {
   timestamp: number
 }
 
+interface StartupStep {
+  message: string;
+  handler: typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS] | "prepareServerFiles" | "startMinecraft";
+  error: string;
+}
+
 interface ServerStartupState {
   statusMessages: StatusMessage[]
   currentStep: number
@@ -22,27 +31,38 @@ interface ServerStartupState {
   isError: boolean
   error: string | null
   dnsAddress: string | null
-  playitTunnelStatusDetails: string | null
   minecraftServerStatusDetails: string | null
   // Console-related state - using combined array to maintain chronological order
   consoleMessages: ConsoleMessage[]
   showConsole: boolean
   consoleAutoScroll: boolean
+  hasRun: boolean
   addStatusMessage: (message: Omit<StatusMessage, 'id'>) => void
-  updateLastStatusMessage: (status: StatusMessage["status"]) => void
+  updateLastStatusMessage: (status: StatusMessage["status"], customMessage?: string) => void
   setCurrentStep: (step: number) => void
   setIsComplete: (isComplete: boolean) => void
   setIsError: (isError: boolean) => void
   setError: (error: string | null) => void
   setDnsAddress: (address: string | null) => void
   reset: () => void
-  setPlayitTunnelStatusDetails: (details: string | null) => void
   setMinecraftServerStatusDetails: (details: string | null) => void
   // Console actions
   addConsoleMessage: (message: string, isError?: boolean) => void
   setShowConsole: (show: boolean) => void
   setConsoleAutoScroll: (autoScroll: boolean) => void
   clearConsoleMessages: () => void
+  setHasRun: (hasRun: boolean) => void
+  setupListeners: () => void
+  cleanupListeners: () => void
+  copyToClipboard: (event: React.MouseEvent<HTMLButtonElement>, toast: (props: any) => void) => void
+  handleRetry: () => void
+  executeStep: (step: number, config: any, onComplete: () => void, onRetry: () => void) => Promise<void>
+  startServerSetup: (config, onComplete, onRetry) => Promise<void>
+  startupSteps: StartupStep[];
+  updateStatus: (status: "pending" | "success" | "error", message?: string) => void
+  mainProcessError: string | null;
+  setMainProcessError: (error: string | null) => void;
+  handleStep: (step: StartupStep) => Promise<{ success: boolean; message?: string }>;
 }
 
 type ServerStartupStore = ServerStartupState;
@@ -54,12 +74,30 @@ const initialState = {
   isError: false,
   error: null,
   dnsAddress: null,
-  playitTunnelStatusDetails: null,
   minecraftServerStatusDetails: null,
   // Console initial state
   consoleMessages: [],
   showConsole: false,
   consoleAutoScroll: true,
+  hasRun: false,
+  startupSteps: [
+    {
+      message: "Preparing server files...",
+      handler: IPC_CHANNELS.SERVER_PREPARE_FILES,
+      error: "Failed to prepare server files"
+    },
+    {
+      message: "Starting Minecraft server...", 
+      handler: IPC_CHANNELS.SERVER_START,
+      error: "Failed to start server"
+    },
+    {
+      message: "Setting up Playit.gg tunnel...",
+      handler: IPC_CHANNELS.TUNNEL_START,
+      error: "Failed to setup tunnel"
+    }
+  ],
+  mainProcessError: null,
 }
 
 export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
@@ -71,28 +109,25 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
       statusMessages: [...state.statusMessages, { ...message, id: `msg-${messageIdCounter++}` }],
     })),
 
-  updateLastStatusMessage: (status) =>
+  updateLastStatusMessage: (status, customMessage) => {
+    console.log('Updating last message:', { status, customMessage }); // Debug log
     set((state) => ({
-      statusMessages: state.statusMessages.map((msg, idx) => {
-        if (idx === state.statusMessages.length - 1) {
-          // Create a new object only for the last message
-          return { ...msg, status };
-        } else {
-          // Return the original object for all other messages
-          return msg;
-        }
-      }),
-    })),
+      statusMessages: state.statusMessages.map((msg, idx) => 
+        idx === state.statusMessages.length - 1
+          ? { ...msg, status, message: customMessage || msg.message }
+          : msg
+      ),
+    }));
+  },
 
   setCurrentStep: (step) => set({ currentStep: step }),
   setIsComplete: (isComplete) => set({ isComplete }),
   setIsError: (isError) => set({ isError }),
   setError: (error) => set({ error }),
   setDnsAddress: (address) => set({ dnsAddress: address }),
+  setHasRun: (hasRun) => set({ hasRun }),
 
   reset: () => set(initialState),
-
-  setPlayitTunnelStatusDetails: (details) => set({ playitTunnelStatusDetails: details }),
 
   setMinecraftServerStatusDetails: (details) => set({ minecraftServerStatusDetails: details }),
 
@@ -126,6 +161,216 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
 
   clearConsoleMessages: () => set({ consoleMessages: [] }),
 
-  // Note: The executeStartupSequence action is defined and used in the component for now.
-  // IPC listeners will be set up in the component and call store actions to update state.
+  setupListeners: () => {
+    const { addConsoleMessage, setMinecraftServerStatusDetails } = get();
+
+    const handleServerOutput = (data: string) => {
+      addConsoleMessage(data, false);
+    };
+
+    const handleServerErrorOutput = (data: string) => {
+      addConsoleMessage(data, true);
+    };
+
+    const handleServerStatusUpdate = (data: { 
+      status?: string; 
+      type?: string;
+      address?: string;
+    }) => {
+      if (data.type === 'tunnel' || data.type === 'minecraft') {
+        setMinecraftServerStatusDetails(data.status || null);
+        if (data.address) {
+          get().setDnsAddress(data.address);
+        }
+      }
+    };
+
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleServerErrorOutput);
+    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatusUpdate);
+
+    return () => {
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleServerErrorOutput);
+      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatusUpdate);
+    };
+  },
+
+  cleanupListeners: () => {
+    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT);
+    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_ERROR);
+    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_STATUS_UPDATE);
+  },
+
+  copyToClipboard: (event, toast) => {
+    event.preventDefault();
+    const { dnsAddress } = get();
+    if (dnsAddress) {
+      window.electronAPI.clipboard.writeText(dnsAddress);
+      toast({
+        title: "Link Copied!",
+        description: "Server address has been copied to your clipboard",
+        variant: "default",
+        className: "bg-space-cadet text-linen border-cool-gray/30",
+      });
+    }
+  },
+
+  handleRetry: () => {
+    const { reset } = get();
+    reset();
+  },
+
+  executeStep: async (stepIndex, config, onComplete, onRetry) => {
+    if (get().isError || get().isComplete) return;
+
+    const step = get().startupSteps[stepIndex];
+    set({ currentStep: stepIndex, mainProcessError: null });
+    get().updateStatus("pending");
+
+    try {
+      const result = await get().handleStep(step);
+      
+      if (!result.success) {
+        const errorMessage = `Error: ${result.message || "Unknown error"}`;
+        get().setMainProcessError(errorMessage);
+        get().updateStatus("error");
+        return;
+      }
+
+      get().updateStatus("success");
+      
+      if (stepIndex < get().startupSteps.length - 1) {
+        await get().executeStep(stepIndex + 1, config, onComplete, onRetry);
+      }
+    } catch (error: unknown) {
+      const errorMessage = `Error: ${error instanceof Error ? error.message : "Unknown error"}`;
+      get().setMainProcessError(errorMessage);
+      get().updateStatus("error");
+    }
+  },
+
+  startServerSetup: async (config, onComplete, onRetry) => {
+    const { reset, clearConsoleMessages, executeStep, setupListeners } = get();
+    
+    // Ensure complete reset
+    reset();
+    clearConsoleMessages();
+    setupListeners();
+    
+    // Start the process
+    return executeStep(0, config, onComplete, onRetry);
+  },
+
+  updateStatus: (status: "pending" | "success" | "error", message?: string) => {
+    const stepIndex = get().currentStep;
+    const step = get().startupSteps[stepIndex];
+    
+    // Always use the step's predefined messages
+    const displayMessage = status === "error" 
+      ? step.error 
+      : step.message;
+
+    set((state) => {
+      const newStatusMessages = [...state.statusMessages];
+      
+      // Update current step status
+      if (newStatusMessages.length > stepIndex) {
+        newStatusMessages[stepIndex] = { 
+          ...newStatusMessages[stepIndex], 
+          status,
+          message: displayMessage
+        };
+      } else {
+        newStatusMessages.push({
+          id: `msg-${messageIdCounter++}`,
+          status,
+          message: displayMessage
+        });
+      }
+
+      return {
+        statusMessages: newStatusMessages,
+        isError: status === "error",
+        isComplete: status === "success" && stepIndex === state.startupSteps.length - 1,
+        ...(status === "error" && { error: displayMessage })
+      };
+    });
+  },
+
+  setMainProcessError: (error: string | null) => set({ mainProcessError: error }),
+
+  handleStep: async (step) => {
+    const { config } = useServerConfigStore.getState();
+    
+    switch (step.handler) {
+      case IPC_CHANNELS.SERVER_PREPARE_FILES:
+        const prepResult = await window.electronAPI.ipcRenderer.invoke(
+          IPC_CHANNELS.SERVER_PREPARE_FILES, 
+          { 
+            serverDirectory: config.serverDirectory,
+            serverType: config.serverType,
+            ramGB: config.ram,
+            javaPath: config.javaPath
+          }
+        );
+        return prepResult;
+
+      case IPC_CHANNELS.SERVER_START:
+        const startResult = await window.electronAPI.ipcRenderer.invoke(
+          IPC_CHANNELS.SERVER_START,
+          {
+            serverDirectory: config.serverDirectory,
+            serverType: config.serverType,
+            ram: config.ram,
+            javaPath: config.javaPath
+          }
+        );
+        return startResult;
+
+      case IPC_CHANNELS.TUNNEL_START:
+        const tunnelResult = await window.electronAPI.ipcRenderer.invoke(
+          IPC_CHANNELS.TUNNEL_START,
+          { serverPort: 25565 }
+        );
+        
+        if (tunnelResult.success) {
+          const domain = tunnelResult.data.assignedDomain || tunnelResult.data.staticIp4;
+          get().setDnsAddress(domain);
+
+          const serverId = `server-${Date.now()}`;
+          const serverData = {
+            id: serverId,
+            name: 'Vanilla Server',
+            status: 'online',
+            version: '1.21.5',
+            onlinePlayers: 0,
+            maxPlayers: 20,
+            lastActive: Date.now(),
+            serverPath: config.serverDirectory,
+            playitDomain: domain,
+            gameMode: 'survival',
+            icon: 'default.png',
+            serverType: config.serverType,
+            ramGB: config.ram
+          };
+
+          // 1. First add the server
+          const updatedServers = await window.electronAPI.ipcRenderer.invoke(
+            IPC_CHANNELS.ADD_SERVER,
+            serverData
+          );
+
+          // 2. Then update both stores
+          useServerListStore.setState({
+            servers: updatedServers,
+            selectedServerId: serverId // Directly set the selected ID
+          });
+        }
+        return tunnelResult;
+
+      default:
+        return { success: false, message: 'Unknown step' };
+    }
+  },
 })) 

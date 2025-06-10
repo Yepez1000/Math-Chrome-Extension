@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { Server } from "@/lib/server-list-store"
+import { Server } from "@/lib/servers-store"
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
@@ -17,7 +17,7 @@ import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { useServerListStore } from "@/lib/server-list-store"
+import { useServerListStore } from "@/lib/servers-store"
 
 function formatLastActive(timestamp: number) {
   const now = Date.now()
@@ -51,7 +51,7 @@ export function ServersList() {
   const filteredServers = servers.filter((server) => {
     const matchesSearch =
       server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      server.playitDomain.toLowerCase().includes(searchQuery.toLowerCase())
+      server.playitDomain?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus = statusFilter ? server.status === statusFilter : true
     const matchesGameMode = gameModeFilter ? server.gameMode === gameModeFilter : true
     return matchesSearch && matchesStatus && matchesGameMode

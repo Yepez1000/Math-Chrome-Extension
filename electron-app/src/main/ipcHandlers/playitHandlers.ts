@@ -117,11 +117,22 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
   // Remove assignment to mainWindow
   // mainWindow = window;
 
-  ipcMain.handle(IPC_CHANNELS.TUNNEL_START, async (_event, { serverPort }): Promise<StartTunnelResponse> => {
+  ipcMain.handle(IPC_CHANNELS.TUNNEL_START, async (event, { serverPort }) => {
+    // Change all status updates to use event.sender.send()
+    event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+      status: "Starting tunnel",
+      type: "tunnel" 
+    });
+
     // Validate serverPort
     if (typeof serverPort !== 'number' || serverPort < 1 || serverPort > 65535) {
       const errorMessage = `Invalid server port: ${serverPort}. Port must be a number between 1 and 65535.`;
       devError(errorMessage);
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+        status: "Error",
+        type: "tunnel",
+        error: errorMessage
+      });
       return { success: false, message: errorMessage };
     }
 
@@ -138,9 +149,15 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       devLog(`Starting full setup attempt ${fullRetryAttempts}/${maxFullRetries}...`);
       // Send status update for starting a new attempt
       if (fullRetryAttempts > 1) {
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: `Retrying Connection` });
+         event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+           status: `Retrying Connection`,
+           type: "tunnel"
+         });
       } else {
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting to Playit" });
+         event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+           status: "Connecting to Playit",
+           type: "tunnel"
+         });
       }
 
       // Reset cookies for a fresh attempt
@@ -177,8 +194,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
     } catch (error: any) {
         const errorMessage = `Setup Error: ${error.message}`;
           devError(errorMessage);
-          _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-          _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
+          event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+            status: "Error",
+            type: "tunnel",
+            error: errorMessage
+          });
         finalMessage = errorMessage;
         break;
       }
@@ -233,7 +253,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
               if (cleanChunk.includes("checking if secret key is valid")) {
                   devLog('Detected existing agent flow start signal.');
-                  _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting Agent" });
+                  event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+                    status: "Connecting Agent",
+                    type: "tunnel"
+                  });
                   resolve({ type: 'existingAgent' });
                 return;
               }
@@ -274,7 +297,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
          try {
              const loginUrlCommand = 'playit account login-url';
              devLog(`Running command: ${loginUrlCommand}`);
-             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting Agent" });
+             event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+               status: "Connecting Agent",
+               type: "tunnel"
+             });
              loginUrl = await new Promise<string>((resolve, reject) => {
                  exec(loginUrlCommand, (error, stdout, stderr) => {
                      if (error) {
@@ -298,8 +324,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
          } catch (error: any) {
              const errorMessage = `Login URL Error: ${error.message}`;
              devError(errorMessage);
-             _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
+             event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+               status: "Error",
+               type: "tunnel",
+               error: errorMessage
+             });
              finalMessage = errorMessage;
              // Trigger full retry if login URL cannot be obtained
              continue;
@@ -307,7 +336,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
          // Step 3: Feed the login URL into the old flow
          devLog('Making GET request with login link...');
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Connecting Agent" });
+         event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+           status: "Connecting Agent",
+           type: "tunnel"
+         });
          try {
              const loginLinkResp = await fetch(loginUrl as string, { method: 'GET'});
              updateCookies(loginLinkResp.headers.get('set-cookie'));
@@ -315,8 +347,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
          } catch (error) {
              devError(`GET request with login link failed: ${error}`);
              finalMessage = `Failed to use login URL: ${error}`;
-             _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: finalMessage }); // Send error status
-             _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
+             event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+               status: "Error",
+               type: "tunnel",
+               error: finalMessage
+             });
              cleanupPlayitProcess();
              await delay(1000);
              continue;
@@ -376,7 +411,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
                devError(`Agent index GET failed: ${error}`);
              }
 
-             const tunnelResult = await createAndPollForTunnelDetails(_event, extractedAgentId);
+             const tunnelResult = await createAndPollForTunnelDetails(event, extractedAgentId);
 
              // Ensure the playit process is running to maintain the tunnel after successfully getting details
              devLog('Detected existing agent and polled for tunnel details. Ensuring playit process is running.');
@@ -415,8 +450,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
      } else if (!initialSignalResult || initialSignalResult.type !== 'claimCode') {
            finalMessage = 'Did not receive claim code from Playit agent.';
          devError(finalMessage);
-           _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: finalMessage }); // Send error status
-           _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" });
+           event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+             status: "Error",
+             type: "tunnel",
+             error: finalMessage
+           });
            cleanupPlayitProcess();
            await delay(5000);
            continue;
@@ -466,8 +504,11 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       } catch (apiError: any) {
         const errorMessage = `API Chain Error (Steps 1-3): ${apiError.message}`;
       devError(errorMessage);
-        _event.sender.send(IPC_CHANNELS.TUNNEL_ERROR, { message: errorMessage });
-        _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Error" }); // Send error status
+        event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+          status: "Error",
+          type: "tunnel",
+          error: errorMessage
+        });
         finalMessage = errorMessage;
         cleanupPlayitProcess();
         await delay(1000);
@@ -475,7 +516,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       }
 
     devLog('Starting claim polling phase (GET requests)...');
-      _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Polling Claim" });
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+        status: "Polling Claim",
+        type: "tunnel"
+      });
       const getHeaders = buildHeaders({'Accept': '*/*'});
       let pollingAttempts = 0;
       const maxPollingAttempts = 60;
@@ -495,7 +539,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
         if (cleanChunk.includes("Visit link to setup")) {
             devLog('[Polling Listener] Detected "Visit link to setup", triggering full retry.');
-            _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Manual Retry" });
+            event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+              status: "Manual Retry",
+              type: "tunnel"
+            });
             shouldExitPolling = true;
         }
     };
@@ -527,7 +574,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
             if (agentIdMatch && agentIdMatch[1]) {
               detectedAgentId = agentIdMatch[1];
             devLog('Claim polling successful. Extracted Agent ID from redirect header:', detectedAgentId);
-              _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Setting Tunnel" });
+              event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+                status: "Setting Tunnel",
+                type: "tunnel"
+              });
               claimPollingSuccess = true;
               playitProcess?.stdout?.removeAllListeners('data');
               playitProcess?.removeAllListeners('close');
@@ -538,7 +588,10 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
 
         } catch (pollingError: any) {
         devError(`Polling GET request failed on attempt ${pollingAttempts}: ${pollingError.message}`);
-         _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: `Polling failed (Attempt ${pollingAttempts}/${maxPollingAttempts})...` }); // Send status update
+         event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+           status: `Polling failed (Attempt ${pollingAttempts}/${maxPollingAttempts})...`,
+           type: "tunnel"
+         }); // Send status update
         }
         await delay(3000);
       }
@@ -561,7 +614,13 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
       return { success: false, message: 'Failed to get agent ID after all retries.' };
     }
 
-  const tunnelResult = await createAndPollForTunnelDetails(_event, detectedAgentId);
+  const tunnelResult = await createAndPollForTunnelDetails(event, detectedAgentId);
+
+  event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+    status: "Tunnel connected",
+    type: "tunnel",
+    address: tunnelResult.data?.assignedDomain || tunnelResult.data?.staticIp4
+  });
 
   return tunnelResult;
   });
@@ -588,58 +647,72 @@ export function getPlayitProcess(): ChildProcess | null {
   return playitProcess;
 }
 
-async function createAndPollForTunnelDetails(_event: Electron.IpcMainInvokeEvent, agentId: string): Promise<StartTunnelResponse> {
-  devLog(`Creating and polling for tunnel details for Agent ID: ${agentId}...`);
-  _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Setting Tunnel" });
-  let finalMessage = '';
-  let tunnelId: string | undefined = undefined;
-  let assignedDomain: string | undefined = undefined;
-  let staticIp4: string | undefined = undefined;
-  let portStart: number | undefined = undefined;
-
-  devLog('Making POST request to create tunnel for Agent ID:', agentId);
-  const tunnelPostUrl = `https://playit.gg/account/agents/${agentId}/tunnels/add?index=&_data=routes%2Faccount%2Fagents%2F%24agentId%2Ftunnels%2Fadd%2Findex`;
-  devLog('POST Request URL:', tunnelPostUrl);
-  const tunnelPostBody = new URLSearchParams({
-    region: 'global',
-    tunnel_type: 'minecraft-java',
-    enabled: 'on',
-  });
-  devLog('POST Request Body:', tunnelPostBody.toString());
+async function createAndPollForTunnelDetails(event: Electron.IpcMainInvokeEvent, agentId: string): Promise<StartTunnelResponse> {
   try {
-    const tunnelPostResp = await fetch(tunnelPostUrl, {
-      method: 'POST',
-      headers: buildHeaders({
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'Origin': 'https://playit.gg',
-        'Referer': `https://playit.gg/account/agents/${agentId}/tunnels/add`,
-        'Accept': '*/*',
-      }),
-      body: tunnelPostBody.toString(),
-      redirect: 'manual',
+    devLog(`Creating and polling for tunnel details for Agent ID: ${agentId}...`);
+    event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+      status: "Setting Tunnel",
+      type: "tunnel"
     });
-    updateCookies(tunnelPostResp.headers.get('set-cookie'));
-    devLog('POST tunnel creation response status:', tunnelPostResp.status);
-    devLog('POST tunnel creation response headers:', JSON.stringify(Object.fromEntries(tunnelPostResp.headers.entries()), null, 2));
+    let finalMessage = '';
+    let tunnelId: string | undefined = undefined;
+    let assignedDomain: string | undefined = undefined;
+    let staticIp4: string | undefined = undefined;
+    let portStart: number | undefined = undefined;
 
-    const remixRedirect = tunnelPostResp.headers.get('x-remix-redirect');
-    devLog('Checking for tunnel ID in X-Remix-Redirect header:', remixRedirect);
-    if (remixRedirect) {
-      const tunnelIdMatch = remixRedirect.match(/\/account\/tunnels\/([a-f0-9\-]+)/);
-      if (tunnelIdMatch) {
-        tunnelId = tunnelIdMatch[1];
-        devLog('Successfully extracted Tunnel ID:', tunnelId);
+    devLog('Making POST request to create tunnel for Agent ID:', agentId);
+    const tunnelPostUrl = `https://playit.gg/account/agents/${agentId}/tunnels/add?index=&_data=routes%2Faccount%2Fagents%2F%24agentId%2Ftunnels%2Fadd%2Findex`;
+    devLog('POST Request URL:', tunnelPostUrl);
+    const tunnelPostBody = new URLSearchParams({
+      region: 'global',
+      tunnel_type: 'minecraft-java',
+      enabled: 'on',
+    });
+    devLog('POST Request Body:', tunnelPostBody.toString());
+    try {
+      const tunnelPostResp = await fetch(tunnelPostUrl, {
+        method: 'POST',
+        headers: buildHeaders({
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'Origin': 'https://playit.gg',
+          'Referer': `https://playit.gg/account/agents/${agentId}/tunnels/add`,
+          'Accept': '*/*',
+        }),
+        body: tunnelPostBody.toString(),
+        redirect: 'manual',
+      });
+      updateCookies(tunnelPostResp.headers.get('set-cookie'));
+      devLog('POST tunnel creation response status:', tunnelPostResp.status);
+      devLog('POST tunnel creation response headers:', JSON.stringify(Object.fromEntries(tunnelPostResp.headers.entries()), null, 2));
+
+      const remixRedirect = tunnelPostResp.headers.get('x-remix-redirect');
+      devLog('Checking for tunnel ID in X-Remix-Redirect header:', remixRedirect);
+      if (remixRedirect) {
+        const tunnelIdMatch = remixRedirect.match(/\/account\/tunnels\/([a-f0-9\-]+)/);
+        if (tunnelIdMatch) {
+          tunnelId = tunnelIdMatch[1];
+          devLog('Successfully extracted Tunnel ID:', tunnelId);
+        }
       }
+    } catch (error) {
+      devError(`Tunnel creation POST failed: ${error}`);
+      finalMessage = 'Tunnel creation POST failed.';
+      return { success: false, message: finalMessage, data: { agentId } };
     }
-  } catch (error) {
-    devError(`Tunnel creation POST failed: ${error}`);
-    finalMessage = 'Tunnel creation POST failed.';
-    return { success: false, message: finalMessage, data: { agentId } };
-  }
 
-  if (tunnelId) {
+    if (!tunnelId) {
+      return { 
+        success: false, 
+        message: 'Failed to create tunnel', 
+        data: { agentId } 
+      };
+    }
+
     devLog('Starting polling for tunnel details...');
-    _event.sender.send(IPC_CHANNELS.TUNNEL_STATUS_UPDATE, { status: "Getting Tunnel Details" });
+    event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+      status: "Getting Tunnel Details",
+      type: "tunnel"
+    });
     let tunnelDetailsPollingSuccess = false;
     const maxTunnelPollingAttempts = 60;
 
@@ -706,22 +779,28 @@ async function createAndPollForTunnelDetails(_event: Electron.IpcMainInvokeEvent
     }
 
     if (tunnelDetailsPollingSuccess) {
-      finalMessage = `Tunnel created and details retrieved. Agent ID: ${agentId}, Tunnel ID: ${tunnelId}`;
-      if (assignedDomain) finalMessage += `, Domain: ${assignedDomain}`;
-      if (staticIp4) finalMessage += `, IPv4: ${staticIp4}`;
-      if (portStart) finalMessage += `, Port Start: ${portStart}`;
-      devLog('=== Tunnel Details Polling Successful ===');
-      devLog(`Assigned Domain: ${assignedDomain}, Static IPv4: ${staticIp4}, Port Start: ${portStart}`);
-      return { success: true, message: finalMessage, data: { agentId, tunnelId, assignedDomain, staticIp4, portStart } };
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { 
+        status: "",
+        type: "tunnel"
+      });
+      finalMessage = `Tunnel created and details retrieved. Agent ID: ${agentId}, Tunnel ID: ${tunnelId}`
+      return { 
+        success: true, 
+        message: finalMessage, 
+        data: { agentId, tunnelId, assignedDomain, staticIp4, portStart } 
+      };
     } else {
-       console.warn('Tunnel details (assigned_domain/static_ip4) could not be retrieved after polling.');
-       finalMessage = 'Tunnel details polling failed.';
-       return { success: false, message: finalMessage, data: { agentId } };
+      return { 
+        success: false, 
+        message: 'Failed to retrieve tunnel details after polling', 
+        data: { agentId } 
+      };
     }
-
-  } else {
-    console.warn('Tunnel ID could not be extracted from X-Remix-Redirect header after POST.');
-    finalMessage = 'Tunnel ID not found after creation POST.';
-    return { success: false, message: finalMessage, data: { agentId } };
+  } catch (error) {
+    return { 
+      success: false, 
+      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+      data: { agentId } 
+    };
   }
 }
