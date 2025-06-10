@@ -46,7 +46,13 @@ const ServerConsole = React.memo(() => {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [userScrolled, setUserScrolled] = useState(false)
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const isScrollingToBottomRef = useRef(false)
+
+  // Only auto-scroll if `consoleAutoScroll` is true AND the user hasn't scrolled up
+  useEffect(() => {
+    if (consoleAutoScroll && scrollRef.current && !userScrolled) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [consoleMessages, consoleAutoScroll, userScrolled])
 
   const throttledScrollHandler = useCallback(() => {
     if (scrollTimeoutRef.current) {
@@ -54,16 +60,16 @@ const ServerConsole = React.memo(() => {
     }
     
     scrollTimeoutRef.current = setTimeout(() => {
-      if (scrollRef.current && !isScrollingToBottomRef.current) {
+      if (scrollRef.current) {
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
         const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5
         
-        if (isAtBottom && userScrolled) {
-          setUserScrolled(false)
-          setConsoleAutoScroll(true)
-        } else if (!isAtBottom && !userScrolled) {
+        if (!isAtBottom && !userScrolled) {
           setUserScrolled(true)
           setConsoleAutoScroll(false)
+        } else if (isAtBottom && userScrolled) {
+          setUserScrolled(false)
+          setConsoleAutoScroll(true)
         }
       }
     }, 100)
@@ -71,25 +77,11 @@ const ServerConsole = React.memo(() => {
 
   const scrollToBottomReliably = useCallback(() => {
     if (scrollRef.current) {
-      isScrollingToBottomRef.current = true
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-            setTimeout(() => {
-              isScrollingToBottomRef.current = false
-            }, 50)
-          }
-        })
-      })
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      setUserScrolled(false)
+      setConsoleAutoScroll(true)
     }
-  }, [])
-
-  const handleScrollToBottom = useCallback(() => {
-    setUserScrolled(false)
-    setConsoleAutoScroll(true)
-    scrollToBottomReliably()
-  }, [scrollToBottomReliably, setConsoleAutoScroll])
+  }, [setConsoleAutoScroll])
 
   const toggleConsole = () => {
     setShowConsole(!showConsole)
@@ -125,7 +117,7 @@ const ServerConsole = React.memo(() => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleScrollToBottom}
+                      onClick={scrollToBottomReliably}
                       className="text-xs border-cool-gray/30 text-cool-gray hover:bg-cool-gray/10"
                     >
                       Scroll to bottom
