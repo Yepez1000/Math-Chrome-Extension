@@ -12,6 +12,7 @@ import { IPC_CHANNELS, StatusMessage as StatusMessageType } from "@shared/types"
 import { useServerStore, TunnelStatus } from "@/lib/store"
 import React from "react"
 import { useServerListStore } from "@/lib/servers-store"
+import { ErrorBoundary } from "react-error-boundary"
 
 const devLog = (...args: any[]) => {
   if (import.meta.env.DEV) {
@@ -76,10 +77,10 @@ const ServerConsole = React.memo(() => {
   }, [userScrolled, setConsoleAutoScroll])
 
   const scrollToBottomReliably = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-      setUserScrolled(false)
-      setConsoleAutoScroll(true)
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    setUserScrolled(false)
+    setConsoleAutoScroll(true)
     }
   }, [setConsoleAutoScroll])
 
@@ -180,8 +181,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   }
 
   const handleRetry = () => {
-    reset();
-    // Let the UI trigger the retry
+    handleRetry(); // Call the store's retry handler
   };
 
   // Determine if console should be shown
@@ -198,80 +198,84 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   };
 
   return (
-    <Card className="w-full bg-space-cadet border-cool-gray/30 shadow-xl">
-      <CardHeader>
-        <CardTitle className="text-linen">
-          {minecraftServerStatusDetails}
-        </CardTitle>
-        <CardDescription className="text-cool-gray">
-          {isComplete
-            ? "Your Minecraft server is now running and accessible"
-            : isError
-              ? "We encountered an issue while setting up your server"
-              : "Please wait while we set up your Minecraft server"}
-        </CardDescription>
-      </CardHeader>
+    <ErrorBoundary 
+      fallback={<ErrorFallback onRetry={handleRetry} />}
+    >
+      <Card className="w-full bg-space-cadet border-cool-gray/30 shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-linen">
+            {minecraftServerStatusDetails}
+          </CardTitle>
+          <CardDescription className="text-cool-gray">
+            {isComplete
+              ? "Your Minecraft server is now running and accessible"
+              : isError
+                ? "We encountered an issue while setting up your server"
+                : "Please wait while we set up your Minecraft server"}
+          </CardDescription>
+        </CardHeader>
 
-      <CardContent className="p-6">
-        <div className="space-y-6">
-          <Card className="border-cool-gray/30 bg-night">
-            <CardContent className="p-6">
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-linen mb-4">Status Updates</h3>
+        <CardContent className="p-6">
+          <div className="space-y-6">
+            <Card className="border-cool-gray/30 bg-night">
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium text-linen mb-4">Status Updates</h3>
 
-                <div className="space-y-3">
-                  <AnimatePresence>
-                    {statusMessages.map((statusMessage, index) => (
-                      <StatusMessage
-                        key={statusMessage.id}
-                        {...statusMessage}
-                        errorText={statusMessage.status === "error" 
-                          ? startupSteps[index]?.error 
-                          : undefined}
-                      />
-                    ))}
-                  </AnimatePresence>
+                  <div className="space-y-3">
+                    <AnimatePresence>
+                      {statusMessages.map((statusMessage, index) => (
+                          <StatusMessage
+                            key={statusMessage.id}
+                            {...statusMessage}
+                          errorText={statusMessage.status === "error" 
+                            ? startupSteps[index]?.error 
+                            : undefined}
+                          />
+                      ))}
+                    </AnimatePresence>
 
-                  {shouldShowConsoleToggle && <ServerConsole />}
+                    {shouldShowConsoleToggle && <ServerConsole />}
 
-                  {getStatusText() && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: [0.5, 1, 0.5] }}
-                      transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                      className={`text-sm italic mt-2 ${
-                        mainProcessError ? 'text-red-400' : 'text-cool-gray'
-                      }`}
-                    >
-                      {getStatusText()}
-                    </motion.div>
-                  )}
+                    {getStatusText() && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+                        className={`text-sm italic mt-2 ${
+                          mainProcessError ? 'text-red-400' : 'text-cool-gray'
+                        }`}
+                      >
+                        {getStatusText()}
+                      </motion.div>
+                    )}
 
-                  {isComplete && dnsAddress && (
-                    <motion.div
-                      key="server-address-container"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      transition={{ duration: 0.5, delay: 0.5 }}
-                      layout
-                      className="mt-6 pt-4 border-t border-cool-gray/20"
-                    >
-                      <ServerAddress 
-                        address={dnsAddress} 
-                        onCopy={(event) => copyToClipboard(event, toast)} 
-                        onComplete={onComplete}
-                      />
-                    </motion.div>
-                  )}
+                    {isComplete && dnsAddress && (
+                      <motion.div
+                        key="server-address-container"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        transition={{ duration: 0.5, delay: 0.5 }}
+                        layout
+                        className="mt-6 pt-4 border-t border-cool-gray/20"
+                      >
+                        <ServerAddress 
+                          address={dnsAddress} 
+                          onCopy={(event) => copyToClipboard(event, toast)} 
+                          onComplete={onComplete}
+                        />
+                      </motion.div>
+                    )}
 
-                  {isError && <ErrorState onRetry={handleRetry} />}
+                    {isError && <ErrorState onRetry={handleRetry} />}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </CardContent>
-    </Card>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </ErrorBoundary>
   )
 }
 
@@ -346,6 +350,31 @@ const ErrorState = ({ onRetry }: { onRetry: () => void }) => (
       </div>
       <p className="text-cool-gray">
         We encountered an issue while setting up your server. You can try again or contact support if the
+        problem persists.
+      </p>
+      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">
+        <Button onClick={onRetry} className="w-full bg-linen text-night hover:bg-linen/90">
+          Try Again
+        </Button>
+      </motion.div>
+    </div>
+  </motion.div>
+)
+
+const ErrorFallback = ({ onRetry }: { onRetry: () => void }) => (
+  <motion.div
+    initial={{ opacity: 0, height: 0 }}
+    animate={{ opacity: 1, height: "auto" }}
+    transition={{ duration: 0.5 }}
+    className="mt-6 pt-4 border-t border-cool-gray/20"
+  >
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-red-400">
+        <AlertTriangle className="h-5 w-5" />
+        <span>An error occurred</span>
+      </div>
+      <p className="text-cool-gray">
+        We encountered an error while setting up your server. You can try again or contact support if the
         problem persists.
       </p>
       <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full">

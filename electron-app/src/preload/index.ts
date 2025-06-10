@@ -14,6 +14,8 @@ interface ElectronAPI {
     on: (channel: string, func: (...args: any[]) => void) => void
     removeListener: (channel: string, func: (...args: any[]) => void) => void
     removeAllListeners: (channel: string) => void
+    send: (channel: string) => void
+    off: (channel: string, func: (...args: any[]) => void) => void
   }
 
   // Add clipboard functionality
@@ -60,6 +62,9 @@ const api: ElectronAPI = {
         // Whitelist channel for manual Java selection
         IPC_CHANNELS.JAVA_SELECT_MANUAL,
         IPC_CHANNELS.RENAME_SERVER,
+        IPC_CHANNELS.UPDATE_SERVER,
+        IPC_CHANNELS.START_EXISTING_SERVER,
+        IPC_CHANNELS.STOP_EXISTING_SERVER,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)
@@ -79,10 +84,11 @@ const api: ElectronAPI = {
         // Add channel for server started event
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
         // Add other on channels as needed
+        "APP_CLOSING"
       ] as const
-      if ((validOnChannels as ReadonlyArray<string>).includes(channel)) {
-        // Pass the data object received from the main process
-        ipcRenderer.on(channel, (_event, data) => func(data))
+      if ((validOnChannels as readonly string[]).includes(channel)) {
+        // Deliberately strip the event object
+        ipcRenderer.on(channel, (_event, ...args) => func(...args));
       }
     },
     removeListener: (channel: string, func: (...args: any[]) => void) => {
@@ -115,6 +121,14 @@ const api: ElectronAPI = {
         ipcRenderer.removeAllListeners(channel)
       }
     },
+    send: (channel: string) => {
+      if (channel === "APP_CLOSING_ACK") {
+        ipcRenderer.send(channel)
+      }
+    },
+    off: (channel: string, func: (...args: any[]) => void) => {
+      ipcRenderer.off(channel, func)
+    }
   },
 
   // Implement clipboard functionality using IPC invoke

@@ -63,6 +63,8 @@ interface ServerStartupState {
   mainProcessError: string | null;
   setMainProcessError: (error: string | null) => void;
   handleStep: (step: StartupStep) => Promise<{ success: boolean; message?: string }>;
+  onComplete: () => void;
+  onRetry: () => void;
 }
 
 type ServerStartupStore = ServerStartupState;
@@ -98,6 +100,8 @@ const initialState = {
     }
   ],
   mainProcessError: null,
+  onComplete: () => {},
+  onRetry: () => {},
 }
 
 export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
@@ -216,11 +220,25 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   },
 
   handleRetry: () => {
-    const { reset } = get();
+    const { reset, clearConsoleMessages, setupListeners, executeStep } = get();
+    const { config } = useServerConfigStore.getState();
+    
+    // Full reset
     reset();
+    clearConsoleMessages();
+    setupListeners();
+    
+    // Kill any existing server process
+    window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_STOP)
+      .catch(() => {}); // Ignore errors if no server running
+    
+    // Restart the process
+    executeStep(0, config, get().onComplete, get().onRetry);
   },
 
   executeStep: async (stepIndex, config, onComplete, onRetry) => {
+    // Store callbacks for retry
+    set({ onComplete, onRetry });
     if (get().isError || get().isComplete) return;
 
     const step = get().startupSteps[stepIndex];
@@ -351,7 +369,8 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
             gameMode: 'survival',
             icon: 'default.png',
             serverType: config.serverType,
-            ramGB: config.ram
+            ramGB: config.ram,
+            javaPath: config.javaPath
           };
 
           // 1. First add the server

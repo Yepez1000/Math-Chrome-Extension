@@ -24,32 +24,38 @@ export interface JavaVersionResponse {
 }
 
 // IPC Channel names as constants to prevent typos and improve maintainability
-export const IPC_CHANNELS = {
-  PICK_DIRECTORY: 'pick-directory',
-  IMPORT_WORLD: 'import-world',
-  SERVER_DIRECTORY_SELECT: 'server-directory-select',
-  TUNNEL_START: 'tunnel-start',
-  TUNNEL_STOP: 'tunnel-stop',
-  TUNNEL_STATUS_UPDATE: 'tunnel-status-update',
-  TUNNEL_ERROR: 'tunnel-error',
-  TUNNEL_ADDRESS: 'tunnel-address',
-  CLAIM_LINK: 'claim-link',
-  PLAYIT_API_CHAIN: 'playit-api-chain',
-  CLIPBOARD_WRITE: 'clipboard-write',
-  SERVER_PREPARE_FILES: 'server-prepare-files',
-  SERVER_START: 'server-start',
-  SERVER_DIRECTORY_DEFAULT: 'server-directory-default',
-  SERVER_CONSOLE_OUTPUT: 'server-console-output',
-  SERVER_CONSOLE_ERROR: 'server-console-error',
-  SERVER_STATUS_UPDATE: 'server-status-update',
-  JAVA_DETECT_VERSION: 'java-detect-version',
+export enum IPC_CHANNELS {
+  PICK_DIRECTORY = 'pick-directory',
+  IMPORT_WORLD = 'import-world',
+  SERVER_DIRECTORY_SELECT = 'server-directory-select',
+  TUNNEL_START = 'tunnel-start',
+  TUNNEL_STOP = 'tunnel-stop',
+  TUNNEL_STATUS_UPDATE = 'tunnel-status-update',
+  TUNNEL_ERROR = 'tunnel-error',
+  TUNNEL_ADDRESS = 'tunnel-address',
+  CLAIM_LINK = 'claim-link',
+  PLAYIT_API_CHAIN = 'playit-api-chain',
+  CLIPBOARD_WRITE = 'clipboard-write',
+  SERVER_PREPARE_FILES = 'server-prepare-files',
+  SERVER_START = 'server-start',
+  SERVER_DIRECTORY_DEFAULT = 'server-directory-default',
+  SERVER_CONSOLE_OUTPUT = 'server-console-output',
+  SERVER_CONSOLE_ERROR = 'server-console-error',
+  SERVER_STATUS_UPDATE = 'server-status-update',
+  JAVA_DETECT_VERSION = 'java-detect-version',
   //server list handlers
-  GET_SERVER_LIST: 'GET_SERVER_LIST',
-  ADD_SERVER: 'ADD_SERVER',
-  REMOVE_SERVER: 'REMOVE_SERVER',
-  JAVA_SELECT_MANUAL: 'java-select-manual',
-  RENAME_SERVER: 'rename-server',
-} as const; 
+  GET_SERVER_LIST = 'GET_SERVER_LIST',
+  ADD_SERVER = 'ADD_SERVER',
+  REMOVE_SERVER = 'REMOVE_SERVER',
+  JAVA_SELECT_MANUAL = 'java-select-manual',
+  RENAME_SERVER = 'rename-server',
+  UPDATE_SERVER = 'update-server',
+  APP_CLOSING = 'app-closing',
+  APP_CLOSING_ACK = 'app-closing-ack',
+  START_EXISTING_SERVER = 'start-existing-server',
+  STOP_EXISTING_SERVER = 'stop-existing-server',
+  SERVER_STOP = 'server-stop',
+}
 
 export interface SystemInfo {
   totalRam: number;

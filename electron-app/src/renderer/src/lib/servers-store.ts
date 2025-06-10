@@ -23,7 +23,10 @@ interface ServerListState {
   selectedServerId: string | null;
   refresh: () => Promise<void>;
   addServer: (server: Omit<Server, "id" | "lastActive"> & { id?: string }) => Promise<void>;
-  //updateServer: (id: string, updates: Partial<Server>) => Promise<void>;
+  updateServer: (
+    serverId: string, 
+    updates: Partial<Server>
+  ) => Promise<void>;
   removeServer: (serverId: string) => Promise<void>;
   renameServer: (serverId: string, newName: string) => Promise<void>;
   toggleServerStatus: (serverId: string) => void;
@@ -59,13 +62,13 @@ export const useServerListStore = create<ServerListState>((set, get) => ({
     set({ servers: updatedList });
   },
 
-  /*updateServer: async (id, updates) => {
+  updateServer: async (serverId, updates) => {
     const updatedList = await window.electronAPI.ipcRenderer.invoke(
       IPC_CHANNELS.UPDATE_SERVER,
-      { id, updates }
+      { serverId, updates }
     );
     set({ servers: updatedList });
-  },*/
+  },
 
   removeServer: async (serverId) => {
     const updatedList = await window.electronAPI.ipcRenderer.invoke(

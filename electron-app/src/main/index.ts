@@ -3,7 +3,18 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerAllIpcHandlers } from './ipcHandlers'
-import { devLog } from './utils/logger'
+import { stopExistingServer } from './services/serverService'
+
+declare global {
+  namespace Electron {
+    interface App {
+      isQuiting: boolean;
+    }
+  }
+}
+
+// Initialize it before creating windows
+app.isQuiting = false;
 
 function createWindow(): void {
   // Create the browser window.
@@ -35,15 +46,45 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  mainWindow.on('close', async (event) => {
+    if (!app.isQuiting) {
+      event.preventDefault();
+
+      if (!mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('APP_CLOSING');
+
+        await Promise.race([
+          new Promise(resolve => ipcMain.once('APP_CLOSING_ACK', resolve)),
+          new Promise(resolve => setTimeout(resolve, 1000))
+        ]);
+      }
+
+      mainWindow.destroy();
+    }
+  });
+
+  // Handle explicit app quitting (Ctrl+Q)
+  app.on('before-quit', async () => {
+    app.isQuiting = true;
+    
+    // Save all servers before quitting
+    const { activeProcesses } = require('./services/serverService');
+    await Promise.all(
+      [...activeProcesses.keys()].map((serverId: string) => 
+        stopExistingServer(serverId)
+      )
+    );
+  });
 }
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  devLog('App is ready, registering IPC handlers...');
   registerAllIpcHandlers();
-  devLog('IPC handlers registered successfully');
+  
+  createWindow();
   
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
@@ -56,9 +97,7 @@ app.whenReady().then(() => {
   })
 
   // IPC test
-  ipcMain.on('ping', () => devLog('pong'))
-
-  createWindow()
+  ipcMain.on('ping', () => {})
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
