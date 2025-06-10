@@ -29,7 +29,6 @@ export function registerServerListHandlers() {
   // IPC: Add server
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_event, server) => {
     const list = await readServerList();
-    if (list.length >= 4) throw new Error('Maximum 4 servers allowed');
     list.push(server);
     await writeServerList(list);
     return list;
@@ -47,5 +46,15 @@ export function registerServerListHandlers() {
       console.error("Failed to delete server directory:", err);
     }
     return list;
+  });
+
+  // IPC: Rename server
+  ipcMain.handle(IPC_CHANNELS.RENAME_SERVER, async (_event, { serverId, newName }) => {
+    const list = await readServerList();
+    const updatedList = list.map((s: any) =>
+      s.id === serverId ? { ...s, name: newName } : s
+    );
+    await writeServerList(updatedList);
+    return updatedList;
   });
 } 

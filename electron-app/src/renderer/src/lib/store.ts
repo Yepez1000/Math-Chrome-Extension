@@ -1,6 +1,7 @@
 import { create } from "zustand"
 import { devtools, persist } from "zustand/middleware"
 import type { LucideIcon } from "lucide-react"
+import type { Server } from "./servers-store"
 
 export type TunnelStatus = "idle" | "starting" | "running" | "error" | "stopping"
 export type TunnelState = {
@@ -136,6 +137,8 @@ interface ServerState {
   updateScheduledTask: (id: string, updates: Partial<ScheduledTask>) => void
   deleteScheduledTask: (id: string) => void
   toggleTaskEnabled: (id: string) => void
+
+  setServerDetails: (server: Server) => void
 }
 
 // Mock initial player data
@@ -652,6 +655,16 @@ export const useServerStore = create<ServerState>()(
             ),
           }))
         },
+
+        setServerDetails: (server) => set({
+          serverName: server.name,
+          status: server.status,
+          version: server.version,
+          address: server.playitDomain,
+          serverPath: server.serverPath,
+          maxPlayers: server.maxPlayers,
+          onlinePlayers: server.onlinePlayers,
+        }),
       }),
       {
         name: "server-storage",
