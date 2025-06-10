@@ -110,7 +110,6 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     })),
 
   updateLastStatusMessage: (status, customMessage) => {
-    console.log('Updating last message:', { status, customMessage }); // Debug log
     set((state) => ({
       statusMessages: state.statusMessages.map((msg, idx) => 
         idx === state.statusMessages.length - 1
