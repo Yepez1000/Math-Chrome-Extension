@@ -187,7 +187,7 @@ export function ServersList() {
                             value={editValue}
                             onChange={e => setEditValue(e.target.value)}
                             autoFocus
-                            onBlur={e => { e.stopPropagation(); setEditingId(null); }}
+                            onBlur={e => { e.stopPropagation(); renameServer(server.id, editValue); setEditingId(null); }}
                             onClick={e => e.stopPropagation()}
                             onFocus={e => e.stopPropagation()}
                           />
