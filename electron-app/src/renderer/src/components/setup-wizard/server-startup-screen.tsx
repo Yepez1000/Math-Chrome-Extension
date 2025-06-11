@@ -21,7 +21,7 @@ const devLog = (...args: any[]) => {
 };
 
 interface ServerStartupScreenProps {
-  onComplete: () => void
+  onComplete: (serverId?: string) => void
   onRetry: () => void
 }
 
@@ -172,6 +172,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     currentStep,
   } = useServerStartupStore()
 
+  const selectedServerId = useServerListStore(state => state.selectedServerId);
 
   // One-time initialization using ref
   const initializedRef = useRef(false);
@@ -181,7 +182,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
   }
 
   const handleRetry = () => {
-    handleRetry(); // Call the store's retry handler
+    onRetry(); // Call the prop function instead of recursing
   };
 
   // Determine if console should be shown
@@ -195,6 +196,42 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
     if (minecraftServerStatusDetails) return `${minecraftServerStatusDetails}${stepText}`;
     
     return null;
+  };
+
+  const handleComplete = () => {
+    // Get the most current state directly from stores
+    const { serverId } = useServerStartupStore.getState();
+    const { selectedServerId, servers } = useServerListStore.getState();
+
+    console.log('Available IDs:', {
+      storeServerId: serverId,
+      selectedId: selectedServerId,
+      allServers: servers.map(s => s.id)
+    });
+
+    // Use the selected ID if available, otherwise use the store ID
+    const finalServerId = selectedServerId || serverId;
+
+    if (!finalServerId && servers.length > 0) {
+      console.warn('Using first available server as fallback');
+      onComplete(servers[0].id);
+      return;
+    }
+
+    if (!finalServerId) {
+      console.error('No server ID available at completion');
+      onComplete();
+      return;
+    }
+
+    // Verify the server exists
+    if (!servers.some(s => s.id === finalServerId)) {
+      console.warn('Selected server not found, using first available');
+      onComplete(servers.length > 0 ? servers[0].id : undefined);
+      return;
+    }
+
+    onComplete(finalServerId);
   };
 
   return (
@@ -262,7 +299,7 @@ export function ServerStartupScreen({ onComplete, onRetry }: ServerStartupScreen
                         <ServerAddress 
                           address={dnsAddress} 
                           onCopy={(event) => copyToClipboard(event, toast)} 
-                          onComplete={onComplete}
+                          onComplete={handleComplete}
                         />
                       </motion.div>
                     )}
@@ -369,7 +406,7 @@ const ErrorFallback = ({ onRetry }: { onRetry: () => void }) => (
     className="mt-6 pt-4 border-t border-cool-gray/20"
   >
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-red-400">
+      <div className="flex items-center gap-2 text-red-gray">
         <AlertTriangle className="h-5 w-5" />
         <span>An error occurred</span>
       </div>

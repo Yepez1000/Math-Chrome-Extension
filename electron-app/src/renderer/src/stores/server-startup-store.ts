@@ -65,6 +65,9 @@ interface ServerStartupState {
   handleStep: (step: StartupStep) => Promise<{ success: boolean; message?: string }>;
   onComplete: () => void;
   onRetry: () => void;
+  serverId: string;
+  isIdLocked: boolean;
+  lockServerId: () => void;
 }
 
 type ServerStartupStore = ServerStartupState;
@@ -102,6 +105,8 @@ const initialState = {
   mainProcessError: null,
   onComplete: () => {},
   onRetry: () => {},
+  serverId: `server-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Generate ID on creation
+  isIdLocked: false, // Add this flag
 }
 
 export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
@@ -130,7 +135,18 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   setDnsAddress: (address) => set({ dnsAddress: address }),
   setHasRun: (hasRun) => set({ hasRun }),
 
-  reset: () => set(initialState),
+  reset: () => {
+    const currentState = get();
+    const newServerId = currentState.isIdLocked 
+      ? currentState.serverId 
+      : `server-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    return { 
+      ...initialState,
+      serverId: newServerId,
+      isIdLocked: currentState.isIdLocked
+    };
+  },
 
   setMinecraftServerStatusDetails: (details) => set({ minecraftServerStatusDetails: details }),
 
@@ -223,8 +239,8 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     const { reset, clearConsoleMessages, setupListeners, executeStep } = get();
     const { config } = useServerConfigStore.getState();
     
-    // Full reset
-    reset();
+    // Full reset with new serverId
+    const newState = reset();
     clearConsoleMessages();
     setupListeners();
     
@@ -232,7 +248,7 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_STOP)
       .catch(() => {}); // Ignore errors if no server running
     
-    // Restart the process
+    // Restart the process with new serverId
     executeStep(0, config, get().onComplete, get().onRetry);
   },
 
@@ -268,14 +284,13 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   },
 
   startServerSetup: async (config, onComplete, onRetry) => {
-    const { reset, clearConsoleMessages, executeStep, setupListeners } = get();
+    const { reset, lockServerId, executeStep } = get();
     
-    // Ensure complete reset
+    // Reset but preserve ID if locked
     reset();
-    clearConsoleMessages();
-    setupListeners();
+    lockServerId(); // Prevent ID changes during setup
     
-    // Start the process
+    console.log('Starting server setup with ID:', get().serverId);
     return executeStep(0, config, onComplete, onRetry);
   },
 
@@ -283,7 +298,6 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     const stepIndex = get().currentStep;
     const step = get().startupSteps[stepIndex];
     
-    // Always use the step's predefined messages
     const displayMessage = status === "error" 
       ? step.error 
       : step.message;
@@ -291,7 +305,6 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     set((state) => {
       const newStatusMessages = [...state.statusMessages];
       
-      // Update current step status
       if (newStatusMessages.length > stepIndex) {
         newStatusMessages[stepIndex] = { 
           ...newStatusMessages[stepIndex], 
@@ -319,12 +332,14 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
 
   handleStep: async (step) => {
     const { config } = useServerConfigStore.getState();
+    const { serverId } = get(); // Get the stored serverId
     
     switch (step.handler) {
       case IPC_CHANNELS.SERVER_PREPARE_FILES:
         const prepResult = await window.electronAPI.ipcRenderer.invoke(
           IPC_CHANNELS.SERVER_PREPARE_FILES, 
           { 
+            serverId,
             serverDirectory: config.serverDirectory,
             serverType: config.serverType,
             ramGB: config.ram,
@@ -337,6 +352,7 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
         const startResult = await window.electronAPI.ipcRenderer.invoke(
           IPC_CHANNELS.SERVER_START,
           {
+            serverId: get().serverId,
             serverDirectory: config.serverDirectory,
             serverType: config.serverType,
             ram: config.ram,
@@ -350,14 +366,14 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
           IPC_CHANNELS.TUNNEL_START,
           { serverPort: 25565 }
         );
-        
+
         if (tunnelResult.success) {
           const domain = tunnelResult.data.assignedDomain || tunnelResult.data.staticIp4;
           get().setDnsAddress(domain);
+          console.log('Tunnel started with domain:', domain);
 
-          const serverId = `server-${Date.now()}`;
           const serverData = {
-            id: serverId,
+            id: get().serverId,
             name: 'Vanilla Server',
             status: 'online',
             version: '1.21.5',
@@ -373,22 +389,25 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
             javaPath: config.javaPath
           };
 
-          // 1. First add the server
           const updatedServers = await window.electronAPI.ipcRenderer.invoke(
             IPC_CHANNELS.ADD_SERVER,
             serverData
           );
 
-          // 2. Then update both stores
           useServerListStore.setState({
             servers: updatedServers,
-            selectedServerId: serverId // Directly set the selected ID
+            selectedServerId: get().serverId
           });
+
+          return { success: true, serverId: get().serverId };
+        } else {
+          throw new Error(tunnelResult.error || 'Tunnel setup failed');
         }
-        return tunnelResult;
 
       default:
         return { success: false, message: 'Unknown step' };
     }
   },
+
+  lockServerId: () => set({ isIdLocked: true }),
 })) 

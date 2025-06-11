@@ -15,13 +15,8 @@ export default function ServerStartupPage() {
     <main className="container mx-auto py-10 px-4 min-h-screen flex items-center justify-center">
       <div className="w-full max-w-4xl">
         <ServerStartupScreen
-          onComplete={() => {
-            if (selectedServerId) {
-              navigate(`/dashboard?serverId=${selectedServerId}`)
-            } else {
-              console.error("No server selected after creation")
-              navigate("/dashboard")
-            }
+          onComplete={(serverId?: string) => {
+            navigate(serverId ? `/dashboard?serverId=${serverId}` : "/dashboard")
           }}
           onRetry={() => {
             toast({

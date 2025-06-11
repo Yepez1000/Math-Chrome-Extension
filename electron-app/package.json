@@ -94,6 +94,10 @@
       {
         "from": "bin/playit/linux",
         "to": "playit_binaries/linux"
+      },
+      {
+        "from": "src/main/services",
+        "to": "services"
       }
     ]
   }

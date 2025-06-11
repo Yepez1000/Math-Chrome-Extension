@@ -19,6 +19,8 @@
       "@shared/*":  ["src/shared/*"]
     },
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
+    "outDir": "out",
+    "rootDir": "src"
   }
 }

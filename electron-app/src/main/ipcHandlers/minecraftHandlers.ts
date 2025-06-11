@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../shared/types';
 import { devLog, devError } from '../utils/logger';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import { activeProcesses } from '../services/serverService';
 
 let minecraftServerProcess: ChildProcessWithoutNullStreams | null = null;
 let minecraftServerPid: number | null = null;
@@ -202,10 +203,7 @@ export function registerMinecraftHandlers() {
 
       // Ensure the server directory exists
       await fs.mkdir(serverDirectory, { recursive: true });
-      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-        status: "Creating directories",
-        type: "minecraft"
-      });
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Creating directories' });
 
       if (serverType === 'vanilla') {
         const serverJarPath = join(serverDirectory, 'server.jar');
@@ -225,10 +223,7 @@ export function registerMinecraftHandlers() {
             devLog(`World directory already exists at target location: ${serverWorldPath}. Skipping copy operation.`);
           } else {
             devLog(`Importing existing world from ${worldPath} to ${serverWorldPath}`);
-            _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-              status: "Importing world",
-              type: "minecraft"
-            });
+            _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Importing world' });
             // Ensure the target world directory is clean before copying
             try {
               await fs.rm(serverWorldPath, { recursive: true, force: true });
@@ -252,10 +247,7 @@ export function registerMinecraftHandlers() {
         }
 
         devLog(`Attempting to download vanilla server.jar to ${serverJarPath}`);
-        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-          status: "Downloading server",
-          type: "minecraft"
-        });
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Downloading server' });
 
         // Download the server.jar using the hardcoded URL
         const hardcodedServerDownloadUrl = 'https://piston-data.mojang.com/v1/objects/e6ec2f64e6080b9b5d9b471b291c33cc7f509733/server.jar'; // Hardcoded URL for 1.21.5
@@ -268,10 +260,7 @@ export function registerMinecraftHandlers() {
         devLog(`Downloaded server.jar successfully to ${serverJarPath}`);
 
         // Create basic server.properties
-        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-          status: "Configuring server",
-          type: "minecraft"
-        });
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Configuring server' });
         const defaultProperties = [
           'server-port=25565',
           'server-ip=0.0.0.0', // Explicitly bind to all network interfaces
@@ -304,10 +293,7 @@ export function registerMinecraftHandlers() {
 
         // Start the server to generate world files
         devLog(`Attempting to start ${serverType} server in ${serverDirectory} with ${maxRamMB}MB RAM.`);
-        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-          status: "Generating world",
-          type: "minecraft"
-        });
+        _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Generating world' });
         const command = `${javaPath} -Xmx${maxRamMB}M -Xms${minRamMB}M -jar "${serverJarPath}" --nogui`;
         devLog(`Starting server with command: ${command}`);
 
@@ -427,7 +413,12 @@ export function registerMinecraftHandlers() {
   });
 
   // Handle starting the Minecraft server
-  ipcMain.handle(IPC_CHANNELS.SERVER_START, async (_event, { serverDirectory, serverType, ram, javaPath }: { serverDirectory: string; serverType: string; ram: number; javaPath: string }) => {
+  ipcMain.handle(IPC_CHANNELS.SERVER_START, async (_event, { serverId, serverDirectory, serverType, ram, javaPath }: { serverId: string; serverDirectory: string; serverType: string; ram: number; javaPath: string }) => {
+    if (!serverId) {
+      throw new Error('Server startup failed: no server ID provided');
+    }
+
+    console.log('Starting server with ID:', serverId);
     await cleanupServerFiles(serverDirectory); // Add this line
     
     // Create a new promise for this startup attempt
@@ -451,10 +442,7 @@ export function registerMinecraftHandlers() {
         throw new Error('Invalid Java path provided');
       }
 
-      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-        status: "Allocating memory",
-        type: "minecraft"
-      });
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Allocating memory' });
 
       const serverJarPath = join(serverDirectory, 'server.jar');
       // No need to check serverJarPath existence here, PREPARE_SERVER_FILES handles download
@@ -466,17 +454,18 @@ export function registerMinecraftHandlers() {
       devLog(`Starting ${serverType} server in ${serverDirectory} with ${maxRamMB}MB RAM.`);
 
       // Clean up any existing server process and wait for file handles to be released
-      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-        status: "Cleaning up",
-        type: "minecraft"
-      });
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Cleaning up' });
       await cleanupWithDelay(serverDirectory);
 
-      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
-        status: "Launching server",
-        type: "minecraft"
-      });
-      minecraftServerProcess = spawn(javaPath, [
+      _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Launching server' });
+
+      // Clean up any existing process with this ID first
+      if (activeProcesses.has(serverId)) {
+        activeProcesses.get(serverId)?.kill();
+        activeProcesses.delete(serverId);
+      }
+
+      const serverProcess = spawn(javaPath, [
         `-Xmx${maxRamMB}M`,
         `-Xms${minRamMB}M`,
         '-jar',
@@ -487,8 +476,10 @@ export function registerMinecraftHandlers() {
         stdio: ['pipe', 'pipe', 'pipe']
       }) as ChildProcessWithoutNullStreams;
 
+      activeProcesses.set(serverId, serverProcess); // Track with serverId
+
       // Check if the process was successfully spawned and streams are available
-      if (!minecraftServerProcess?.stdout || !minecraftServerProcess?.stderr) {
+      if (!serverProcess || !serverProcess.stdout || !serverProcess.stderr) {
         const errorMsg = 'Failed to spawn Minecraft server process or get streams';
         devError(errorMsg);
         // Send failure to renderer immediately
@@ -500,14 +491,14 @@ export function registerMinecraftHandlers() {
       }
 
       // Set up event listeners for server output and events using the helper
-      setupServerProcessListeners(minecraftServerProcess, _event, serverType);
+      setupServerProcessListeners(serverProcess, _event, serverType);
 
       // Wait for the serverStartupPromise to resolve (indicating 'Done') or reject (indicating error/timeout)
       await serverStartupPromise;
 
       // If we reach here, the promise resolved successfully.
       // The SERVER_STATUS_UPDATE success message was already sent by the stdout listener.
-      minecraftServerPid = minecraftServerProcess.pid ?? null;
+      minecraftServerPid = serverProcess.pid ?? null;
       return { success: true, message: 'Minecraft server startup process completed successfully.' };
 
     } catch (error) {
