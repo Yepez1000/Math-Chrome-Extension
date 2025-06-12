@@ -196,18 +196,15 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
       type?: string;
       address?: string;
     }) => {
-      if (data.type === 'tunnel' || data.type === 'minecraft') {
-        setMinecraftServerStatusDetails(data.status || null);
-        if (data.address) {
-          get().setDnsAddress(data.address);
-        }
+      setMinecraftServerStatusDetails(data.status || null);
+      if (data.address) {
+        get().setDnsAddress(data.address);
+
       }
     };
 
     // Remove existing listeners first to avoid duplicates
-    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT);
-    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_ERROR);
-    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_STATUS_UPDATE);
+    get().cleanupListeners();
 
     // Add new listeners
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
@@ -265,6 +262,11 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     set({ currentStep: stepIndex, mainProcessError: null });
     get().updateStatus("pending");
 
+    // Setup listeners on the first step
+    if (stepIndex === 0) {
+      get().setupListeners();
+    }
+
     try {
       const result = await get().handleStep(step);
       
@@ -272,6 +274,7 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
         const errorMessage = `Error: ${result.message || "Unknown error"}`;
         get().setMainProcessError(errorMessage);
         get().updateStatus("error");
+        get().cleanupListeners(); // Cleanup on error
         return;
       }
 
@@ -279,11 +282,15 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
       
       if (stepIndex < get().startupSteps.length - 1) {
         await get().executeStep(stepIndex + 1, config, onComplete, onRetry);
+      } else {
+        // Cleanup listeners on successful completion (last step)
+        get().cleanupListeners();
       }
     } catch (error: unknown) {
       const errorMessage = `Error: ${error instanceof Error ? error.message : "Unknown error"}`;
       get().setMainProcessError(errorMessage);
       get().updateStatus("error");
+      get().cleanupListeners(); // Cleanup on error
     }
   },
 
