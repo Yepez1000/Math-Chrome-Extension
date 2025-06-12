@@ -204,14 +204,18 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
       }
     };
 
+    // Remove existing listeners first to avoid duplicates
+    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT);
+    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_ERROR);
+    window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_STATUS_UPDATE);
+
+    // Add new listeners
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleServerErrorOutput);
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatusUpdate);
 
     return () => {
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleServerErrorOutput);
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatusUpdate);
+      get().cleanupListeners();
     };
   },
 

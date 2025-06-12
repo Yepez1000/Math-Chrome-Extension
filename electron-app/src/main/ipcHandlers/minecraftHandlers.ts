@@ -59,112 +59,82 @@ function setupServerProcessListeners(
   event: Electron.IpcMainInvokeEvent,
   serverType: string
 ) {
-  let output = ''; // Accumulate output for potential error reporting
-  let errorOutput = ''; // Accumulate error output
+  let output = '';
+  let errorOutput = '';
 
-  serverProcess.stdout.on('data', (data) => {
+  // Cleanup function to remove all listeners
+  const cleanup = () => {
+    serverProcess.stdout?.removeAllListeners('data');
+    serverProcess.stderr?.removeAllListeners('data');
+    serverProcess.removeAllListeners('close');
+    serverProcess.removeAllListeners('error');
+  };
+
+  const onStdout = (data: Buffer) => {
     const message = data.toString();
-    output += message; // Accumulate output
+    output += message;
     devLog(`Server stdout: ${message}`);
     event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, message);
 
-    // Check for specific fatal error patterns in stdout
-    // Exclude log file deletion errors as they're not fatal
-    if (
-      (message.includes('Failed to start the minecraft server') ||
-      message.includes('Error:') ||
-      message.toLowerCase().includes('exception')) &&
-      !message.includes('Unable to delete file') && // Exclude log file deletion errors
-      !message.includes('FileSystemException:') // Exclude file system errors
-    ) {
-      const errorMsg = `Server startup failed (stdout): ${message.substring(0, 200)}...`;
-      devError('Detected potential fatal server startup error in stdout. Signalling failure and attempting to terminate process.', errorMsg);
-      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
-      // Attempt to kill the process to prevent hanging
-      if (minecraftServerProcess && !minecraftServerProcess.killed) {
-        minecraftServerProcess.kill();
-      }
-      // Reject the promise to signal failure to the renderer's invoke call
-      rejectStartupPromise?.(new Error(errorMsg));
-    }
-
-    // Check for successful startup (Vanilla "Done" message)
     if (serverType === 'vanilla' && message.includes('Done')) {
       devLog('Vanilla server startup detected!');
       event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
         status: "Server running",
         type: "minecraft"
       });
-      // Resolve the promise to signal success to the renderer's invoke call
       resolveStartupPromise?.();
+      cleanup(); // Cleanup listeners after successful startup
     }
-  });
+  };
 
-  serverProcess.stderr.on('data', (data) => {
+  const onStderr = (data: Buffer) => {
     const message = data.toString();
-    errorOutput += message; // Accumulate error output
+    errorOutput += message;
     devError(`Server stderr: ${message}`);
     event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, message);
+  };
 
-    // Check for specific fatal error patterns in stderr
-    // Exclude log file deletion errors as they're not fatal
-    if (
-      (message.includes('Failed to start the minecraft server') ||
-      message.includes('Error:') ||
-      message.toLowerCase().includes('exception')) &&
-      !message.includes('Unable to delete file') && // Exclude log file deletion errors
-      !message.includes('FileSystemException:') // Exclude file system errors
-    ) {
-      const errorMsg = `Server startup failed (stderr): ${message.substring(0, 200)}...`;
-      devError('Detected potential fatal server startup error in stderr. Signalling failure and attempting to terminate process.', errorMsg);
-      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
-      // Attempt to kill the process to prevent hanging
-      if (minecraftServerProcess && !minecraftServerProcess.killed) {
-        minecraftServerProcess.kill();
-      }
-      // Reject the promise to signal failure to the renderer's invoke call
-      rejectStartupPromise?.(new Error(errorMsg));
-    }
-  });
-
-  serverProcess.on('close', (code: number | null) => {
+  const onClose = (code: number | null) => {
     devLog(`Server process closed with code ${code}`);
-    // If the promise hasn't already been resolved (meaning "Done" wasn't seen),
-    // then a close event indicates an unexpected shutdown/failure.
-    // The server should run indefinitely until stopped via the UI.
-    // We also check if the reject function exists before calling it.
-    if (rejectStartupPromise && serverStartupPromise && !('hasOwnProperty' in serverStartupPromise && (serverStartupPromise.hasOwnProperty('_fulfilled') || serverStartupPromise.hasOwnProperty('_rejected')))) {
-       const errorMsg = `Server process exited unexpectedly with code ${code}. Check logs for details.`;
-       devError(errorMsg);
-       event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
-       // Reject the promise to signal failure to the renderer's invoke call
-       rejectStartupPromise(new Error(errorMsg));
-    } else if (code !== 0) {
-        // If the promise *was* resolved but the code is non-zero, it might be an issue,
-        // but the SERVER_STATUS_UPDATE success has already been sent.
-        devError(`Server process closed with non-zero code ${code} AFTER startup signal.`);
+    if (rejectStartupPromise && !resolveStartupPromise) {
+      const errorMsg = `Server process exited unexpectedly with code ${code}. Check logs for details.`;
+      devError(errorMsg);
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: errorMsg });
+      rejectStartupPromise(new Error(errorMsg));
     }
-  });
+    cleanup(); // Cleanup listeners on process close
+  };
 
-  // Set a timeout for the promise itself, in case the process hangs without output/closing
-  const startupTimeout = setTimeout(() => {
-    // If the promise hasn't already been resolved (meaning "Done" wasn't seen)
-    // We also check if the reject function exists before calling it.
-    if (rejectStartupPromise && serverStartupPromise && !('hasOwnProperty' in serverStartupPromise && (serverStartupPromise.hasOwnProperty('_fulfilled') || serverStartupPromise.hasOwnProperty('_rejected')))) {
-       const timeoutErrorMsg = 'Server startup timed out.';
-       devError(timeoutErrorMsg);
-       event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: timeoutErrorMsg });
-       // Attempt to kill the process
-       if (minecraftServerProcess && !minecraftServerProcess.killed) {
-           minecraftServerProcess.kill();
-       }
-       // Reject the promise
-       rejectStartupPromise(new Error(timeoutErrorMsg));
+  const onError = (err: Error) => {
+    devError(`Server process error: ${err.message}`);
+    if (rejectStartupPromise) {
+      rejectStartupPromise(err);
     }
-  }, 120000); // 60 second timeout
+    cleanup(); // Cleanup listeners on error
+  };
+
+  // Attach listeners
+  serverProcess.stdout.on('data', onStdout);
+  serverProcess.stderr.on('data', onStderr);
+  serverProcess.on('close', onClose);
+  serverProcess.on('error', onError);
+
+  // Set a timeout for the promise itself
+  const startupTimeout = setTimeout(() => {
+    if (rejectStartupPromise) {
+      const timeoutErrorMsg = 'Server startup timed out.';
+      devError(timeoutErrorMsg);
+      event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { success: false, error: timeoutErrorMsg });
+      rejectStartupPromise(new Error(timeoutErrorMsg));
+      cleanup(); // Cleanup listeners on timeout
+    }
+  }, 120000);
 
   // Clean up timeout if promise resolves or rejects normally
-  serverStartupPromise?.finally(() => clearTimeout(startupTimeout));
+  serverStartupPromise?.finally(() => {
+    clearTimeout(startupTimeout);
+    cleanup(); // Extra cleanup for safety
+  });
 }
 
 // Add this helper function

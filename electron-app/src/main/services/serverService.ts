@@ -109,36 +109,36 @@ export async function stopExistingServer(serverId: string): Promise<{success: bo
   }
 
   const process = activeProcesses.get(serverId);
-  if (!process || !process.stdin) {
+  if (!process || process.killed) {
     activeProcesses.delete(serverId);
-    return { success: false, error: 'Process not available' };
+    return {success: false, error: 'Process not available or already killed'};
   }
 
   try {
-    // 1. Send save-all command
-    process.stdin.write('save-all\n');
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s for save
+    // Skip graceful shutdown if stdin isn't available
+    if (!process.stdin?.writable) {
+      process.kill('SIGKILL');
+      return {success: true};
+    }
 
-    // 2. Send stop command (graceful shutdown)
+    // Graceful shutdown sequence
+    process.stdin.write('save-all\n');
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for save
     process.stdin.write('stop\n');
-    
-    // 3. Wait with timeout
-    const stopped = await Promise.race([
+
+    // Wait for exit (max 10 seconds)
+    const exited = await Promise.race([
       new Promise(resolve => process.once('exit', () => resolve(true))),
-      new Promise(resolve => setTimeout(() => resolve(false), 10000)) // 10s timeout
+      new Promise(resolve => setTimeout(() => resolve(false), 10000))
     ]);
 
-    if (!stopped) {
-      // 4. Force kill if still running
-      process.kill('SIGKILL');
+    if (!exited) {
+      process.kill('SIGKILL'); // Force kill if graceful fails
     }
 
     return {success: true};
-  } catch (err: unknown) {
-    return { 
-      success: false, 
-      error: `Shutdown failed: ${err instanceof Error ? err.message : String(err)}` 
-    };
+  } catch (err) {
+    return {success: false, error: `Shutdown failed: ${err instanceof Error ? err.message : String(err)}`};
   } finally {
     activeProcesses.delete(serverId);
   }

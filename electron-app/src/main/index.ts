@@ -66,10 +66,12 @@ function createWindow(): void {
 
   // Handle explicit app quitting (Ctrl+Q)
   app.on('before-quit', async (event) => {
-    event.preventDefault(); // Prevent immediate quit
-    app.isQuiting = true;
+    if (app.isQuitting) return;
+    app.isQuitting = true;
+    event.preventDefault();
 
     try {
+      // Stop all servers gracefully
       await Promise.allSettled(
         [...activeProcesses.keys()].map(async (serverId) => {
           try {
@@ -80,7 +82,7 @@ function createWindow(): void {
         })
       );
     } finally {
-      app.quit(); // Force quit after cleanup
+      app.exit(0);
     }
   });
 }
