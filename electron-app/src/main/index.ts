@@ -66,8 +66,8 @@ function createWindow(): void {
 
   // Handle explicit app quitting (Ctrl+Q)
   app.on('before-quit', async (event) => {
-    if (app.isQuitting) return;
-    app.isQuitting = true;
+    if (app.isQuiting) return;
+    app.isQuiting = true;
     event.preventDefault();
 
     try {
