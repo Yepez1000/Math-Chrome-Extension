@@ -47,7 +47,6 @@ function EmptyServerState({ hasServers, onCreateServer }: { hasServers: boolean;
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5 }}
       onClick={onCreateServer}
-      whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
     >
       {/* Background decoration */}
@@ -86,27 +85,14 @@ function EmptyServerState({ hasServers, onCreateServer }: { hasServers: boolean;
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 border-0 px-8 py-3 rounded-lg">
-            <motion.div
-              className="flex items-center gap-3"
-              initial={{ x: 0 }}
-              whileHover={{ x: 4 }}
-              transition={{ type: "spring", stiffness: 400, damping: 10 }}
-            >
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 border-0 px-8 py-3 rounded-lg flex items-center gap-3">
               <Plus size={20} />
               <span className="font-semibold">Create Your First Server</span>
-              <motion.div
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              >
-                <Sparkles size={16} />
-              </motion.div>
-            </motion.div>
           </div>
         </motion.div>
         
         <p className="text-xs text-cool-gray/70 mt-4 group-hover:text-cool-gray/80 transition-colors duration-300">
-          ✨ Free forever • 🚀 Ready in 3 minutes • 🎮 Supports all versions
+          ✨ Free forever • ⚡ Ready in 3 minutes • 🎮 Supports all versions
         </p>
       </div>
     </motion.div>
@@ -316,7 +302,7 @@ export function ServersList() {
         {filteredServers.length === 0 ? (
           <EmptyServerState 
             hasServers={servers.length > 0} 
-            onCreateServer={handleCreateServer} 
+            onCreateServer={() => handleCreateServer()} 
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
