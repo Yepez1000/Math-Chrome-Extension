@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from '../../../shared/types';
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping";
 export type GameMode = "survival" | "creative" | "adventure" | "spectator";
+export type ServerType = "vanilla" | "spigot" | "paper" | "forge" | "fabric" | "bukkit";
 
 export interface Server {
   id: string;
@@ -15,6 +16,7 @@ export interface Server {
   serverPath: string;
   playitDomain?: string;
   gameMode: GameMode;
+  serverType: ServerType;
   icon?: string;
   playitTunnelId?: string;
   port: number;
@@ -53,6 +55,7 @@ export const useServerListStore = create<ServerListState>((set) => ({
       lastActive: Date.now(),
       maxPlayers: server.maxPlayers || 20,
       gameMode: server.gameMode || "survival",
+      serverType: server.serverType || "vanilla",
       icon: server.icon || DEFAULT_ICON,
       status: "offline",
       onlinePlayers: 0,

@@ -241,17 +241,19 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     const { reset, clearConsoleMessages, setupListeners, executeStep } = get();
     const { config } = useServerConfigStore.getState();
     
-    // Full reset with new serverId
-    const newState = reset();
+    // Reset state
+    reset();
     clearConsoleMessages();
     setupListeners();
     
     // Kill any existing server process
     window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_STOP)
-      .catch(() => {}); // Ignore errors if no server running
+      .catch(() => {});  // Ignore errors if no server is running
     
-    // Restart the process with new serverId
-    executeStep(0, config, get().onComplete, get().onRetry);
+    // Add a short delay to prevent immediate retries
+    setTimeout(() => {
+      executeStep(0, config, get().onComplete, get().onRetry);
+    }, 2000);  // 2-second delay
   },
 
   executeStep: async (stepIndex, config, onComplete, onRetry) => {
