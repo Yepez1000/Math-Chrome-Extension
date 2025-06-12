@@ -6,7 +6,6 @@ import { registerAllIpcHandlers } from './ipcHandlers'
 import { stopExistingServer, activeProcesses } from './services/serverService'
 import { devLog, devError } from './utils/logger'
 import { readServerList, writeServerList } from './ipcHandlers/serverListHandlers'
-import { IPC_CHANNELS } from '../shared/types'
 
 declare global {
   namespace Electron {
@@ -85,7 +84,7 @@ function createWindow(): void {
             await stopExistingServer(serverId);
             devLog(`Successfully stopped server ${serverId}`);
             
-            // Directly update server list
+            // Directly update server list for the stopped server
             const servers = await readServerList();
             const updatedServers = servers.map(server => 
               server.id === serverId ? { ...server, status: 'offline', lastActive: Date.now(), onlinePlayers: 0 } : server

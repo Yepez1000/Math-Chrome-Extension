@@ -85,17 +85,15 @@ export function registerServerListHandlers() {
       devLog(`Starting server with path: ${server.serverPath}, Java: ${server.javaPath}`);
       await startExistingServer(serverId, server.serverPath, server.javaPath);
       
-      // Only update status AFTER successful startup
-      const updatedServers = servers.map(s => 
-        s.id === serverId ? { 
-          ...s, 
-          status: 'online',
-          lastActive: Date.now(),
-          onlinePlayers: 0
-        } : s
-      );
+      // Update only the specific server, but first verify its current status
+      const updatedServers = servers.map(s => {
+        if (s.id === serverId && s.status !== 'online') {
+          return { ...s, status: 'online', lastActive: Date.now(), onlinePlayers: s.onlinePlayers };
+        }
+        return s;  // Explicitly return unchanged for others
+      });
       await writeServerList(updatedServers);
-      
+      devLog(`Successfully updated status for server ${serverId} to online`);
       return { success: true, servers: updatedServers };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';

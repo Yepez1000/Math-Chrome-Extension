@@ -210,52 +210,52 @@ export function ServersList() {
     e.stopPropagation();
     if (loadingIds.has(serverId)) return;
 
-    const action = currentStatus === "online" ? "stop" : "start";
-    const targetStatus = action === "stop" ? "stopping" : "starting";
-    const fallbackStatus = action === "stop" ? "online" : "offline";
+    const action = currentStatus === 'online' ? 'stop' : 'start';
+    const targetStatus = action === 'stop' ? 'stopping' : 'starting';
+    const fallbackStatus = action === 'stop' ? 'online' : 'offline';
 
-    // Optimistic update
+    // Add the serverId to loadingIds before starting
+    setLoadingIds(prev => new Set(prev).add(serverId));
     useServerListStore.setState(state => ({
       servers: state.servers.map(s => 
-        s.id === serverId ? {...s, status: targetStatus} : s
+        s.id === serverId ? { ...s, status: targetStatus } : s
       )
     }));
-    setLoadingIds(prev => new Set(prev).add(serverId));
 
     try {
       const { success, error, port } = await window.electronAPI.ipcRenderer.invoke(
-        action === "start" ? IPC_CHANNELS.START_EXISTING_SERVER : IPC_CHANNELS.STOP_EXISTING_SERVER,
+        action === 'start' ? IPC_CHANNELS.START_EXISTING_SERVER : IPC_CHANNELS.STOP_EXISTING_SERVER,
         { serverId }
       );
 
-      if (!success) {
-        // Revert only the status (not the whole server list)
+      if (success) {
+        // Refresh only after success, and update the specific server
+        await useServerListStore.getState().refresh();  // Still refresh, but we can optimize later if needed
+        if (action === 'start' && port) {
+          useServerListStore.setState(state => ({
+            servers: state.servers.map(s => 
+              s.id === serverId ? { ...s, port } : s
+            )
+          }));
+        }
+      } else {
+        // Revert only the specific server on failure
         useServerListStore.setState(state => ({
           servers: state.servers.map(s => 
-            s.id === serverId ? {...s, status: fallbackStatus} : s
+            s.id === serverId ? { ...s, status: fallbackStatus } : s
           )
         }));
         throw new Error(error || `Server ${action} failed`);
       }
-
-      // Update port if changed (only on successful start)
-      if (action === "start" && port) {
-        useServerListStore.setState(state => ({
-          servers: state.servers.map(s => 
-            s.id === serverId ? {...s, port} : s
-          )
-        }));
-      }
-
-      // Refresh the full server list after success
-      refresh();
     } catch (error) {
-      toast({ 
-        title: "Error", 
-        description: (error as Error).message, 
-        variant: "destructive" 
-      });
+      useServerListStore.setState(state => ({
+        servers: state.servers.map(s => 
+          s.id === serverId ? { ...s, status: fallbackStatus } : s
+        )
+      }));
+      toast({ title: 'Error', description: (error as Error).message, variant: 'destructive' });
     } finally {
+      // Remove the serverId from loadingIds after operation
       setLoadingIds(prev => {
         const newSet = new Set(prev);
         newSet.delete(serverId);
