@@ -163,12 +163,12 @@ export function ServersList() {
   const {
     searchQuery,
     statusFilter,
-    gameModeFilter,
+    serverTypeFilter,
     editingServerId,
     editValue,
     setSearchQuery,
     setStatusFilter,
-    setGameModeFilter,
+    setServerTypeFilter,
     startEditing,
     setEditValue,
     stopEditing,
@@ -181,10 +181,10 @@ export function ServersList() {
         server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         server.playitDomain?.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesStatus = statusFilter ? server.status === statusFilter : true
-      const matchesGameMode = gameModeFilter ? server.gameMode === gameModeFilter : true
-      return matchesSearch && matchesStatus && matchesGameMode
+      const matchesServerType = serverTypeFilter ? server.serverType === serverTypeFilter : true
+      return matchesSearch && matchesStatus && matchesServerType
     })
-  }, [servers, searchQuery, statusFilter, gameModeFilter])
+  }, [servers, searchQuery, statusFilter, serverTypeFilter])
 
   // Explicit initialization instead of useEffect
   if (servers.length === 0) {
@@ -226,8 +226,8 @@ export function ServersList() {
     setStatusFilter(statusFilter === status ? null : status)
   }
 
-  const handleToggleGameModeFilter = (gameMode: string) => {
-    setGameModeFilter(gameModeFilter === gameMode ? null : gameMode)
+  const handleToggleServerTypeFilter = (serverType: string) => {
+    setServerTypeFilter(serverTypeFilter === serverType ? null : serverType)
   }
 
   return (
@@ -256,44 +256,70 @@ export function ServersList() {
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2">
+              <Button variant="outline" className="flex items-center gap-2 bg-space-cadet border-cool-gray/30 text-linen">
                 <Filter size={16} />
                 Filters
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-space-cadet border-cool-gray/30 text-linen">
+            <DropdownMenuContent className="bg-space-cadet border-cool-gray/30 text-linen" onCloseAutoFocus={(e) => e.preventDefault()}>
               <div className="p-2 text-xs font-semibold text-cool-gray">Status</div>
               <DropdownMenuCheckboxItem
                 checked={statusFilter === "online"}
                 onCheckedChange={() => handleToggleStatusFilter("online")}
+                onSelect={(e) => e.preventDefault()}
               >
                 Online
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={statusFilter === "offline"}
                 onCheckedChange={() => handleToggleStatusFilter("offline")}
+                onSelect={(e) => e.preventDefault()}
               >
                 Offline
               </DropdownMenuCheckboxItem>
 
-              <div className="p-2 text-xs font-semibold text-cool-gray">Game Mode</div>
+              <div className="p-2 text-xs font-semibold text-cool-gray">Server Type</div>
               <DropdownMenuCheckboxItem
-                checked={gameModeFilter === "survival"}
-                onCheckedChange={() => handleToggleGameModeFilter("survival")}
+                checked={serverTypeFilter === "vanilla"}
+                onCheckedChange={() => handleToggleServerTypeFilter("vanilla")}
+                onSelect={(e) => e.preventDefault()}
               >
-                Survival
+                Vanilla
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
-                checked={gameModeFilter === "creative"}
-                onCheckedChange={() => handleToggleGameModeFilter("creative")}
+                checked={serverTypeFilter === "spigot"}
+                onCheckedChange={() => handleToggleServerTypeFilter("spigot")}
+                onSelect={(e) => e.preventDefault()}
               >
-                Creative
+                Spigot
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
-                checked={gameModeFilter === "adventure"}
-                onCheckedChange={() => handleToggleGameModeFilter("adventure")}
+                checked={serverTypeFilter === "paper"}
+                onCheckedChange={() => handleToggleServerTypeFilter("paper")}
+                onSelect={(e) => e.preventDefault()}
               >
-                Adventure
+                Paper
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={serverTypeFilter === "forge"}
+                onCheckedChange={() => handleToggleServerTypeFilter("forge")}
+                onSelect={(e) => e.preventDefault()}
+              >
+                Forge
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={serverTypeFilter === "fabric"}
+                onCheckedChange={() => handleToggleServerTypeFilter("fabric")}
+                onSelect={(e) => e.preventDefault()}
+              >
+                Fabric
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={serverTypeFilter === "bukkit"}
+                onCheckedChange={() => handleToggleServerTypeFilter("bukkit")}
+                onSelect={(e) => e.preventDefault()}
+              >
+                Bukkit
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
