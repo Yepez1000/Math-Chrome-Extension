@@ -2,10 +2,9 @@
 
 import type React from "react"
 import { Server } from "@/lib/servers-store"
-
-import { useState, useEffect } from "react"
+import { useMemo } from "react"
 import { motion } from "framer-motion"
-import { Plus, Search, Filter, Power, Trash2, Pencil } from "lucide-react"
+import { Plus, Search, Filter, Power, Trash2, Pencil, Sparkles, Zap, Rocket } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,8 +17,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { useServerListStore } from "@/lib/servers-store"
+import { useServerListUIStore } from "@/stores/server-list-ui-store"
 
-function formatLastActive(timestamp: number) {
+// Pure function for time formatting
+const formatLastActive = (timestamp: number): string => {
   const now = Date.now()
   const diff = now - timestamp
   if (diff < 60000) return "Just now"
@@ -28,43 +29,186 @@ function formatLastActive(timestamp: number) {
   return `${Math.floor(diff / 86400000)} day${Math.floor(diff / 86400000) > 1 ? "s" : ""} ago`
 }
 
+// Separate component for empty state to flatten conditional logic
+function EmptyServerState({ hasServers, onCreateServer }: { hasServers: boolean; onCreateServer: () => void }) {
+  if (hasServers) {
+    return (
+      <div className="bg-space-cadet rounded-lg p-8 text-center border border-cool-gray/30">
+        <h3 className="text-xl font-semibold text-linen mb-2">No servers match your filters</h3>
+        <p className="text-cool-gray">Try adjusting your search criteria or filters.</p>
+      </div>
+    )
+  }
+
+  return (
+    <motion.div 
+      className="relative bg-gradient-to-br from-space-cadet via-space-cadet/90 to-indigo-900/20 rounded-2xl p-12 text-center border border-indigo-500/20 overflow-hidden cursor-pointer group transition-all duration-300 hover:border-indigo-400/40 hover:shadow-lg hover:shadow-indigo-500/10"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.5 }}
+      onClick={onCreateServer}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+    >
+      {/* Background decoration */}
+      <div className="absolute inset-0 bg-gradient-to-br from-transparent via-indigo-500/5 to-purple-500/10 group-hover:via-indigo-500/10 group-hover:to-purple-500/15 transition-all duration-300" />
+      <div className="absolute top-4 right-4 text-indigo-400/20 group-hover:text-indigo-400/30 transition-colors duration-300">
+        <Sparkles size={32} />
+      </div>
+      <div className="absolute bottom-4 left-4 text-purple-400/20 group-hover:text-purple-400/30 transition-colors duration-300">
+        <Zap size={28} />
+      </div>
+      
+      <div className="relative z-10">
+        <motion.div
+          className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 mb-6 border border-indigo-400/30 group-hover:border-indigo-400/50 transition-all duration-300"
+          animate={{ 
+            boxShadow: [
+              "0 0 0 0 rgba(99, 102, 241, 0.4)",
+              "0 0 0 20px rgba(99, 102, 241, 0)",
+            ]
+          }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <Rocket className="text-indigo-400 group-hover:text-indigo-300 transition-colors duration-300" size={32} />
+        </motion.div>
+        
+        <h3 className="text-2xl font-bold text-linen mb-3 bg-gradient-to-r from-linen to-indigo-200 bg-clip-text text-transparent group-hover:from-white group-hover:to-indigo-100 transition-all duration-300">
+          Ready to Launch Your First Server?
+        </h3>
+        <p className="text-cool-gray mb-8 max-w-md mx-auto leading-relaxed group-hover:text-cool-gray/90 transition-colors duration-300">
+          Create your very own Minecraft server in minutes. No technical knowledge required – 
+          our wizard will guide you through every step.
+        </p>
+        
+        <motion.div
+          className="inline-block"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 border-0 px-8 py-3 rounded-lg">
+            <motion.div
+              className="flex items-center gap-3"
+              initial={{ x: 0 }}
+              whileHover={{ x: 4 }}
+              transition={{ type: "spring", stiffness: 400, damping: 10 }}
+            >
+              <Plus size={20} />
+              <span className="font-semibold">Create Your First Server</span>
+              <motion.div
+                animate={{ rotate: [0, 360] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              >
+                <Sparkles size={16} />
+              </motion.div>
+            </motion.div>
+          </div>
+        </motion.div>
+        
+        <p className="text-xs text-cool-gray/70 mt-4 group-hover:text-cool-gray/80 transition-colors duration-300">
+          ✨ Free forever • 🚀 Ready in 3 minutes • 🎮 Supports all versions
+        </p>
+      </div>
+    </motion.div>
+  )
+}
+
+// Separate component for server editing to flatten conditional logic
+function ServerNameDisplay({ 
+  server, 
+  isEditing, 
+  editValue, 
+  onStartEdit, 
+  onUpdateValue, 
+  onSaveEdit, 
+  onCancelEdit 
+}: {
+  server: Server
+  isEditing: boolean
+  editValue: string
+  onStartEdit: () => void
+  onUpdateValue: (value: string) => void
+  onSaveEdit: () => void
+  onCancelEdit: () => void
+}) {
+  if (isEditing) {
+    return (
+      <form onSubmit={(e) => { e.preventDefault(); onSaveEdit(); }}>
+        <input
+          className="bg-night border-cool-gray/30 text-linen rounded px-2 py-1 text-xl font-semibold w-32"
+          value={editValue}
+          onChange={(e) => onUpdateValue(e.target.value)}
+          autoFocus
+          onBlur={(e) => { e.stopPropagation(); onSaveEdit(); }}
+          onClick={(e) => e.stopPropagation()}
+          onFocus={(e) => e.stopPropagation()}
+        />
+      </form>
+    )
+  }
+
+  return (
+    <>
+      <h3 className="text-xl font-semibold text-linen">{server.name}</h3>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onStartEdit();
+        }}
+        className="ml-1 p-1 hover:bg-cool-gray/20 rounded transition-colors"
+      >
+        <Pencil className="h-4 w-4 text-cool-gray" />
+      </button>
+    </>
+  )
+}
+
 export function ServersList() {
   const navigate = useNavigate()
   const { toast } = useToast()
+  
+  // Store state - following thin UI wrapper pattern
   const servers = useServerListStore((s) => s.servers)
   const refresh = useServerListStore((s) => s.refresh)
   const toggleServerStatus = useServerListStore((s) => s.toggleServerStatus)
   const removeServer = useServerListStore((s) => s.removeServer)
   const renameServer = useServerListStore((s) => s.renameServer)
+  
+  const {
+    searchQuery,
+    statusFilter,
+    gameModeFilter,
+    editingServerId,
+    editValue,
+    setSearchQuery,
+    setStatusFilter,
+    setGameModeFilter,
+    startEditing,
+    setEditValue,
+    stopEditing,
+  } = useServerListUIStore()
 
-  // Call refresh only once on mount to avoid infinite loop
-  useEffect(() => {
+  // Computed values instead of useEffect - explicit logic
+  const filteredServers = useMemo(() => {
+    return servers.filter((server) => {
+      const matchesSearch =
+        server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        server.playitDomain?.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesStatus = statusFilter ? server.status === statusFilter : true
+      const matchesGameMode = gameModeFilter ? server.gameMode === gameModeFilter : true
+      return matchesSearch && matchesStatus && matchesGameMode
+    })
+  }, [servers, searchQuery, statusFilter, gameModeFilter])
+
+  // Explicit initialization instead of useEffect
+  if (servers.length === 0) {
     refresh()
-  }, [refresh])
-
-  const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string | null>(null)
-  const [gameModeFilter, setGameModeFilter] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState("")
-
-  const filteredServers = servers.filter((server) => {
-    const matchesSearch =
-      server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      server.playitDomain?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter ? server.status === statusFilter : true
-    const matchesGameMode = gameModeFilter ? server.gameMode === gameModeFilter : true
-    return matchesSearch && matchesStatus && matchesGameMode
-  })
-
-  const handleCreateServer = () => {
-    navigate("/create-server")
   }
 
-  const handleServerClick = (serverId: string) => {
-    navigate(`/dashboard?serverId=${serverId}`)
-  }
-
+  // Event handlers - explicit logic
+  const handleCreateServer = () => navigate("/create-server")
+  const handleServerClick = (serverId: string) => navigate(`/dashboard?serverId=${serverId}`)
+  
   const handleToggleStatus = (e: React.MouseEvent, serverId: string, currentStatus: string) => {
     e.stopPropagation()
     toggleServerStatus(serverId)
@@ -85,16 +229,33 @@ export function ServersList() {
     }
   }
 
+  const handleSaveEdit = () => {
+    if (editingServerId && editValue.trim()) {
+      renameServer(editingServerId, editValue.trim())
+    }
+    stopEditing()
+  }
+
+  const handleToggleStatusFilter = (status: string) => {
+    setStatusFilter(statusFilter === status ? null : status)
+  }
+
+  const handleToggleGameModeFilter = (gameMode: string) => {
+    setGameModeFilter(gameModeFilter === gameMode ? null : gameMode)
+  }
+
   return (
     <div className="container mx-auto py-10 px-4 bg-night min-h-screen">
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <h1 className="text-3xl font-bold text-linen">My Minecraft Servers</h1>
 
-          <Button onClick={handleCreateServer} className="flex items-center gap-2">
-            <Plus size={16} />
-            Create New Server
-          </Button>
+          {servers.length > 0 && (
+            <Button onClick={handleCreateServer} className="flex items-center gap-2">
+              <Plus size={16} />
+              Create New Server
+            </Button>
+          )}
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-8">
@@ -118,13 +279,13 @@ export function ServersList() {
               <div className="p-2 text-xs font-semibold text-cool-gray">Status</div>
               <DropdownMenuCheckboxItem
                 checked={statusFilter === "online"}
-                onCheckedChange={() => setStatusFilter(statusFilter === "online" ? null : "online")}
+                onCheckedChange={() => handleToggleStatusFilter("online")}
               >
                 Online
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={statusFilter === "offline"}
-                onCheckedChange={() => setStatusFilter(statusFilter === "offline" ? null : "offline")}
+                onCheckedChange={() => handleToggleStatusFilter("offline")}
               >
                 Offline
               </DropdownMenuCheckboxItem>
@@ -132,19 +293,19 @@ export function ServersList() {
               <div className="p-2 text-xs font-semibold text-cool-gray">Game Mode</div>
               <DropdownMenuCheckboxItem
                 checked={gameModeFilter === "survival"}
-                onCheckedChange={() => setGameModeFilter(gameModeFilter === "survival" ? null : "survival")}
+                onCheckedChange={() => handleToggleGameModeFilter("survival")}
               >
                 Survival
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={gameModeFilter === "creative"}
-                onCheckedChange={() => setGameModeFilter(gameModeFilter === "creative" ? null : "creative")}
+                onCheckedChange={() => handleToggleGameModeFilter("creative")}
               >
                 Creative
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={gameModeFilter === "adventure"}
-                onCheckedChange={() => setGameModeFilter(gameModeFilter === "adventure" ? null : "adventure")}
+                onCheckedChange={() => handleToggleGameModeFilter("adventure")}
               >
                 Adventure
               </DropdownMenuCheckboxItem>
@@ -153,13 +314,10 @@ export function ServersList() {
         </div>
 
         {filteredServers.length === 0 ? (
-          <div className="bg-space-cadet rounded-lg p-8 text-center border border-cool-gray/30">
-            <h3 className="text-xl font-semibold text-linen mb-2">No servers found</h3>
-            <p className="text-cool-gray mb-6">
-              {servers.length === 0 ? "You haven't created any servers yet." : "No servers match your search criteria."}
-            </p>
-            {servers.length === 0 && <Button onClick={handleCreateServer}>Create Your First Server</Button>}
-          </div>
+          <EmptyServerState 
+            hasServers={servers.length > 0} 
+            onCreateServer={handleCreateServer} 
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredServers.map((server) => (
@@ -180,37 +338,19 @@ export function ServersList() {
                       />
                     </div>
                     <div className="flex items-center gap-2">
-                      {editingId === server.id ? (
-                        <form onSubmit={e => { e.preventDefault(); renameServer(server.id, editValue); setEditingId(null); }}>
-                          <input
-                            className="bg-night border-cool-gray/30 text-linen rounded px-2 py-1 text-xl font-semibold w-32"
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            autoFocus
-                            onBlur={e => { e.stopPropagation(); renameServer(server.id, editValue); setEditingId(null); }}
-                            onClick={e => e.stopPropagation()}
-                            onFocus={e => e.stopPropagation()}
-                          />
-                        </form>
-                      ) : (
-                        <>
-                          <h3 className="text-xl font-semibold text-linen">{server.name}</h3>
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              setEditingId(server.id);
-                              setEditValue(server.name);
-                            }}
-                            className="ml-1 p-1 hover:bg-cool-gray/20 rounded"
-                          >
-                            <Pencil className="h-4 w-4 text-cool-gray" />
-                          </button>
-                        </>
-                      )}
+                      <ServerNameDisplay
+                        server={server}
+                        isEditing={editingServerId === server.id}
+                        editValue={editValue}
+                        onStartEdit={() => startEditing(server.id, server.name)}
+                        onUpdateValue={setEditValue}
+                        onSaveEdit={handleSaveEdit}
+                        onCancelEdit={stopEditing}
+                      />
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge
-                        className={`$${
+                        className={`${
                           server.status === "online"
                             ? "bg-green-500/20 text-green-400 border-green-500/50"
                             : "bg-red-500/20 text-red-400 border-red-500/50"
