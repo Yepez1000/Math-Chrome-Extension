@@ -18,7 +18,7 @@ export async function readServerList() {
 }
 
 // Helper to write the server list
-async function writeServerList(list: any[]) {
+export async function writeServerList(list: any[]): Promise<void> {
   await fs.writeFile(serverListPath, JSON.stringify(list, null, 2));
 }
 

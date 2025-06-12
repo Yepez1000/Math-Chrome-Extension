@@ -146,11 +146,11 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
       ? currentState.serverId 
       : `server-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    return { 
+    set({ 
       ...initialState,
       serverId: newServerId,
       isIdLocked: currentState.isIdLocked
-    };
+    });
   },
 
   setMinecraftServerStatusDetails: (details) => set({ minecraftServerStatusDetails: details }),

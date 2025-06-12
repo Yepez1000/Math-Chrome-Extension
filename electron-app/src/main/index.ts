@@ -4,6 +4,9 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerAllIpcHandlers } from './ipcHandlers'
 import { stopExistingServer, activeProcesses } from './services/serverService'
+import { devLog, devError } from './utils/logger'
+import { readServerList, writeServerList } from './ipcHandlers/serverListHandlers'
+import { IPC_CHANNELS } from '../shared/types'
 
 declare global {
   namespace Electron {
@@ -71,16 +74,36 @@ function createWindow(): void {
     event.preventDefault();
 
     try {
-      // Stop all servers gracefully
-      await Promise.allSettled(
-        [...activeProcesses.keys()].map(async (serverId) => {
+      devLog('Initiating server shutdown sequence...');
+      const serverIds = [...activeProcesses.keys()];
+      devLog('Servers to stop:', serverIds);
+      
+      if (serverIds.length > 0) {  // Only proceed if there are servers to stop
+        const stopPromises = serverIds.map(async (serverId) => {
           try {
+            devLog(`Stopping server ${serverId}`);
             await stopExistingServer(serverId);
+            devLog(`Successfully stopped server ${serverId}`);
+            
+            // Directly update server list
+            const servers = await readServerList();
+            const updatedServers = servers.map(server => 
+              server.id === serverId ? { ...server, status: 'offline', lastActive: Date.now(), onlinePlayers: 0 } : server
+            );
+            await writeServerList(updatedServers);
+            devLog(`Successfully updated status for server ${serverId} to offline`);
           } catch (err) {
-            console.error(`Server ${serverId} shutdown error:`, err);
+            devError(`Failed to stop or update server ${serverId}: ${err instanceof Error ? err.message : String(err)}`);
           }
-        })
-      );
+        });
+        
+        await Promise.allSettled(stopPromises);
+        devLog('All server shutdown and status update attempts completed');
+      } else {
+        devLog('No servers to stop, skipping updates');
+      }
+    } catch (err) {
+      devError('Error in shutdown sequence:', err);
     } finally {
       app.exit(0);
     }
