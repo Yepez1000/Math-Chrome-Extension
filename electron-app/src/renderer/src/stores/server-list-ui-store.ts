@@ -1,16 +1,17 @@
 import { create } from 'zustand'
+import { ServerStatus, ServerType } from '@/lib/servers-store'
 
 interface ServerListUIState {
   searchQuery: string
-  statusFilter: string | null
-  serverTypeFilter: string | null
+  statusFilter: ServerStatus | null
+  serverTypeFilter: ServerType | null
   editingServerId: string | null
   editValue: string
   
   // Actions
   setSearchQuery: (query: string) => void
-  setStatusFilter: (status: string | null) => void
-  setServerTypeFilter: (serverType: string | null) => void
+  setStatusFilter: (status: ServerStatus | null) => void
+  setServerTypeFilter: (serverType: ServerType | null) => void
   startEditing: (serverId: string, currentName: string) => void
   setEditValue: (value: string) => void
   stopEditing: () => void

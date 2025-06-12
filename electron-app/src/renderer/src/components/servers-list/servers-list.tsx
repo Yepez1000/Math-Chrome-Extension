@@ -1,8 +1,8 @@
 "use client"
 
 import type React from "react"
-import { Server } from "@/lib/servers-store"
-import { useMemo } from "react"
+import { Server, ServerStatus, ServerType } from "@/lib/servers-store"
+import { useMemo, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Plus, Search, Filter, Power, Trash2, Pencil, Sparkles, Zap, Rocket } from "lucide-react"
 import {
@@ -186,10 +186,12 @@ export function ServersList() {
     })
   }, [servers, searchQuery, statusFilter, serverTypeFilter])
 
-  // Explicit initialization instead of useEffect
-  if (servers.length === 0) {
-    refresh()
-  }
+  // Fetch servers when component mounts or when servers list becomes empty
+  useEffect(() => {
+    if (servers.length === 0) {
+      refresh()
+    }
+  }, [servers.length, refresh])
 
   // Event handlers - explicit logic
   const handleCreateServer = () => navigate("/create-server")
@@ -222,11 +224,11 @@ export function ServersList() {
     stopEditing()
   }
 
-  const handleToggleStatusFilter = (status: string) => {
+  const handleToggleStatusFilter = (status: ServerStatus) => {
     setStatusFilter(statusFilter === status ? null : status)
   }
 
-  const handleToggleServerTypeFilter = (serverType: string) => {
+  const handleToggleServerTypeFilter = (serverType: ServerType) => {
     setServerTypeFilter(serverTypeFilter === serverType ? null : serverType)
   }
 

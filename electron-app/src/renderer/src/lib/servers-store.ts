@@ -24,7 +24,12 @@ interface ServerListState {
   servers: Server[];
   selectedServerId: string | null;
   refresh: () => Promise<void>;
-  addServer: (server: Omit<Server, "id" | "lastActive"> & { id?: string }) => Promise<void>;
+  addServer: (
+   server: Omit<Server, "id" | "lastActive" | "serverType"> & {
+     id?: string;
+     serverType?: ServerType;
+   }
+ ) => Promise<void>;
   //updateServer: (id: string, updates: Partial<Server>) => Promise<void>;
   removeServer: (serverId: string) => Promise<void>;
   renameServer: (serverId: string, newName: string) => Promise<void>;
