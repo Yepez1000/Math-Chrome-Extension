@@ -345,7 +345,7 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
 
   getNextAvailablePort: async () => {
     let port = get().nextAvailablePort;
-    while (await window.electronAPI.ipcRenderer.invoke('CHECK_PORT', port)) {
+    while (await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.CHECK_PORT, port)) {
       port++;
     }
     set({ nextAvailablePort: port + 1 }); // Reserve next port

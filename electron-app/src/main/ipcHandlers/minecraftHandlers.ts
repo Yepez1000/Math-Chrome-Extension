@@ -527,4 +527,9 @@ export function registerMinecraftHandlers() {
       return { success: false, message: errorMsg }; // Return instead of throw
     }
   });
+
+  // Add IPC handler for CHECK_PORT
+  ipcMain.handle(IPC_CHANNELS.CHECK_PORT, async (_event, port: number) => {
+    return await checkPort(port);  // Use the existing checkPort function
+  });
 } 
