@@ -5,6 +5,8 @@ import { IPC_CHANNELS } from '../../shared/types';
 import { devLog, devError } from '../utils/logger';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { activeProcesses } from '../services/serverService';
+import { checkPort } from '../services/serverService';
+import { readServerList } from './serverListHandlers';
 
 let minecraftServerProcess: ChildProcessWithoutNullStreams | null = null;
 let minecraftServerPid: number | null = null;
@@ -151,10 +153,32 @@ async function cleanupServerFiles(serverDirectory: string) {
   }
 }
 
+// Add port checking utility
+export async function findAvailablePort(startPort: number, existingPorts: number[] = []): Promise<number> {
+  let port = startPort;
+  while (await checkPort(port) || existingPorts.includes(port)) {
+    port++;
+  }
+  return port;
+}
+
+async function getExistingServers() {
+  return await readServerList();
+}
+
 export function registerMinecraftHandlers() {
   // Handle preparing server files
-  ipcMain.handle(IPC_CHANNELS.SERVER_PREPARE_FILES, async (_event, { serverDirectory, serverType, ramGB, worldPath, importedWorld, javaPath }: { serverDirectory: string; serverType: string; ramGB: number; worldPath?: string; importedWorld?: boolean; javaPath: string }) => {
+  ipcMain.handle(IPC_CHANNELS.SERVER_PREPARE_FILES, async (_event, { serverDirectory, serverType, ramGB, worldPath, importedWorld, javaPath, port }: { serverDirectory: string; serverType: string; ramGB: number; worldPath?: string; importedWorld?: boolean; javaPath: string; port: number }) => {
+    devLog('[Port Tracking] Preparing files with port:', port);
     try {
+      // Fetch existing server ports from the server list
+      const existingServers = await getExistingServers();
+      const existingPorts = existingServers.map(server => server.port).filter(Boolean);
+
+      // Use the updated findAvailablePort function
+      const assignedPort = await findAvailablePort(port, existingPorts);
+      devLog('[Port Tracking] Assigned unique port:', assignedPort);
+
       // Validate input
       if (!serverDirectory || typeof serverDirectory !== 'string') {
         throw new Error('Invalid server directory provided');
@@ -232,7 +256,7 @@ export function registerMinecraftHandlers() {
         // Create basic server.properties
         _event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, { status: 'Configuring server' });
         const defaultProperties = [
-          'server-port=25565',
+          `server-port=${assignedPort}`,
           'server-ip=0.0.0.0', // Explicitly bind to all network interfaces
           'gamemode=survival',
           'difficulty=easy',
@@ -365,7 +389,7 @@ export function registerMinecraftHandlers() {
         });
 
         minecraftServerPid = serverProcess.pid ?? null;
-        return { success: true, message: 'Vanilla server files prepared successfully.' };
+        return { success: true, message: 'Vanilla server files prepared successfully.', port: assignedPort };
       } else {
         // Mock behavior for other server types
         devLog(`Mock preparation for ${serverType} server.`);
@@ -435,6 +459,24 @@ export function registerMinecraftHandlers() {
         activeProcesses.delete(serverId);
       }
 
+      // Read the assigned port from server.properties
+      const serverPropertiesPath = join(serverDirectory, 'server.properties');
+      const properties = await fs.readFile(serverPropertiesPath, 'utf8');
+      const portMatch = properties.match(/server-port=(\d+)/);
+      let port = portMatch ? parseInt(portMatch[1]) : 25565;
+      devLog('[Port Tracking] Starting server with port from server.properties:', port);
+      
+      // Verify port is available
+      if (await checkPort(port)) {
+        port = await findAvailablePort(port);
+        // Update server.properties with new port
+        const updatedProperties = properties.replace(
+          /server-port=\d+/g, 
+          `server-port=${port}`
+        );
+        await fs.writeFile(serverPropertiesPath, updatedProperties);
+      }
+
       const serverProcess = spawn(javaPath, [
         `-Xmx${maxRamMB}M`,
         `-Xms${minRamMB}M`,
@@ -469,7 +511,11 @@ export function registerMinecraftHandlers() {
       // If we reach here, the promise resolved successfully.
       // The SERVER_STATUS_UPDATE success message was already sent by the stdout listener.
       minecraftServerPid = serverProcess.pid ?? null;
-      return { success: true, message: 'Minecraft server startup process completed successfully.' };
+      return { 
+        success: true,
+        message: 'Server started successfully',
+        port: port
+      };
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unexpected error';

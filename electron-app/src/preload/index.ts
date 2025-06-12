@@ -65,6 +65,7 @@ const api: ElectronAPI = {
         IPC_CHANNELS.UPDATE_SERVER,
         IPC_CHANNELS.START_EXISTING_SERVER,
         IPC_CHANNELS.STOP_EXISTING_SERVER,
+        IPC_CHANNELS.CHECK_PORT,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)

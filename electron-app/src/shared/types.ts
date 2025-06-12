@@ -55,6 +55,7 @@ export enum IPC_CHANNELS {
   START_EXISTING_SERVER = 'start-existing-server',
   STOP_EXISTING_SERVER = 'stop-existing-server',
   SERVER_STOP = 'server-stop',
+  CHECK_PORT = 'check-port',
 }
 
 export interface SystemInfo {

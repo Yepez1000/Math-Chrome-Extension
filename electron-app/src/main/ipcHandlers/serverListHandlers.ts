@@ -8,7 +8,7 @@ import { devLog, devError } from '../utils/logger';
 const serverListPath = path.join(app.getPath('userData'), 'servers.json');
 
 // Helper to read the server list
-async function readServerList() {
+export async function readServerList() {
   try {
     const data = await fs.readFile(serverListPath, 'utf-8');
     return JSON.parse(data);

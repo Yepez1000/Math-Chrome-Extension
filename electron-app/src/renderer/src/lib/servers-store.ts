@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { IPC_CHANNELS } from "@shared/types";
+import { IPC_CHANNELS } from '../../../shared/types';
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping";
 export type GameMode = "survival" | "creative" | "adventure" | "spectator";
@@ -16,6 +16,8 @@ export interface Server {
   playitDomain?: string;
   gameMode: GameMode;
   icon?: string;
+  playitTunnelId?: string;
+  port: number;
 }
 
 interface ServerListState {
@@ -35,7 +37,7 @@ interface ServerListState {
 
 const DEFAULT_ICON = "/placeholder.svg?height=40&width=40";
 
-export const useServerListStore = create<ServerListState>((set, get) => ({
+export const useServerListStore = create<ServerListState>((set) => ({
   servers: [],
   selectedServerId: null,
 

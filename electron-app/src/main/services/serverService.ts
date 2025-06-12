@@ -7,20 +7,30 @@ import { ipcMain } from 'electron';
 import net from 'net';
 import { IPC_CHANNELS } from '../../shared/types';
 import { promisify } from 'util';
+import { findAvailablePort } from '../ipcHandlers/minecraftHandlers';
 
 export const activeProcesses = new Map<string, ChildProcess>();
 
 // Pure function: Load config and spawn process
 export async function startExistingServer(serverId: string, serverDirectory: string, javaPath: string): Promise<void> {
-  // Check for port conflict first
-  try {
-    const portInUse = await checkPort(25565);
-    if (portInUse) {
-      throw new Error('Port 25565 is already in use. Close other Minecraft servers first.');
-    }
-  } catch (err) {
-    throw new Error(`Port check failed: ${(err as Error).message}`);
+  const properties = await fs.readFile(path.join(serverDirectory, 'server.properties'), 'utf8');
+  const portMatch = properties.match(/server-port=(\d+)/);
+  let port = portMatch ? parseInt(portMatch[1]) : 25565;
+  devLog('[Port Tracking] Starting existing server with initial port:', port);
+
+  // Check if port is available
+  const portInUse = await checkPort(port);
+  if (!portInUse) {
+    port = await findAvailablePort(port);
+    // Update server.properties with new port
+    const updatedProperties = properties.replace(
+      /server-port=\d+/g,
+      `server-port=${port}`
+    );
+    await fs.writeFile(path.join(serverDirectory, 'server.properties'), updatedProperties);
   }
+
+  devLog('[Port Tracking] Final server port:', port);
 
   // 1. Handle OneDrive sync conflicts
   const logPath = path.join(serverDirectory, 'logs', 'latest.log');
@@ -42,9 +52,8 @@ export async function startExistingServer(serverId: string, serverDirectory: str
   }
 
   const serverJarPath = path.win32.join(serverDirectory, 'server.jar');
-  const command = `"${javaPath}" -Xmx1024M -Xms1024M -jar "${serverJarPath}" --nogui`;
   
-  devLog(`Starting server ${serverId} with command: ${command}`);
+  devLog(`Starting server ${serverId} on port ${port}`);
 
   return new Promise((resolve, reject) => {
     const process = spawn(javaPath, [
@@ -149,6 +158,8 @@ export function registerServerServiceHandlers() {
     return fsSync.existsSync(path);
   });
 
+  ipcMain.handle('CHECK_PORT', (_, port: number) => checkPort(port));
+
   ipcMain.handle('HANDLE_LOG_FILE', async (_, serverDirectory: string) => {
     const logPath = path.join(serverDirectory, 'logs');
     const logFile = path.join(logPath, 'latest.log');
@@ -226,7 +237,7 @@ export function registerServerServiceHandlers() {
   });
 }
 
-async function checkPort(port: number): Promise<boolean> {
+export async function checkPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once('error', () => resolve(true));

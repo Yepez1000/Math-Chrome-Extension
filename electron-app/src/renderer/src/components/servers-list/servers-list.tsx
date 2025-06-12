@@ -92,7 +92,7 @@ export function ServersList() {
     setLoadingIds(prev => new Set(prev).add(serverId));
 
     try {
-      const { success, error } = await window.electronAPI.ipcRenderer.invoke(
+      const { success, error, port } = await window.electronAPI.ipcRenderer.invoke(
         action === "start" ? IPC_CHANNELS.START_EXISTING_SERVER : IPC_CHANNELS.STOP_EXISTING_SERVER,
         { serverId }
       );
@@ -105,6 +105,15 @@ export function ServersList() {
           )
         }));
         throw new Error(error || `Server ${action} failed`);
+      }
+
+      // Update port if changed (only on successful start)
+      if (action === "start" && port) {
+        useServerListStore.setState(state => ({
+          servers: state.servers.map(s => 
+            s.id === serverId ? {...s, port} : s
+          )
+        }));
       }
 
       // Refresh the full server list after success
@@ -134,6 +143,30 @@ export function ServersList() {
       })
     }
   }
+
+  /*const handlePortChange = async (serverId: string, newPort: number) => {
+    const server = servers.find(s => s.id === serverId);
+    if (!server?.playitTunnelId) return;
+
+    const success = await window.electronAPI.ipcRenderer.invoke(
+      'UPDATE_TUNNEL_PORT', 
+      {
+        tunnelId: server.playitTunnelId,
+        oldPort: server.port,
+        newPort
+      }
+    );
+
+    if (success) {
+      // Update local state
+      useServerListStore.setState(state => ({
+        servers: state.servers.map(s => 
+          s.id === serverId ? {...s, port: newPort} : s
+        )
+      }));
+    }
+    return success;
+  };*/
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>

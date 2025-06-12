@@ -118,6 +118,7 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
   // mainWindow = window;
 
   ipcMain.handle(IPC_CHANNELS.TUNNEL_START, async (event, { serverPort }) => {
+    devLog('[Port Tracking] Creating tunnel with port:', serverPort);
     // Change all status updates to use event.sender.send()
     event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
       status: "Starting tunnel",
@@ -622,7 +623,30 @@ export function registerPlayitHandlers(/* window: BrowserWindow */) {
     address: tunnelResult.data?.assignedDomain || tunnelResult.data?.staticIp4
   });
 
-  return tunnelResult;
+  // Update port if not default
+  if (serverPort !== 25565 && tunnelResult.data?.tunnelId) {
+    await updateTunnelPort(
+      tunnelResult.data.tunnelId,
+      detectedAgentId,
+      25565,
+      serverPort,
+      currentCookies
+    );
+  }
+
+  return {
+    success: true,
+    data: {
+      tunnelId: tunnelResult.data?.tunnelId,
+      assignedDomain: tunnelResult.data?.assignedDomain,
+      staticIp4: tunnelResult.data?.staticIp4,
+      assignedPort: serverPort
+    }
+  };
+  });
+
+  ipcMain.handle('UPDATE_TUNNEL_PORT', async (_, { tunnelId, agentId, oldPort, newPort, sessionCookie}) => {
+    return updateTunnelPort(tunnelId, agentId, oldPort, newPort, sessionCookie || currentCookies);
   });
 }
 
@@ -802,5 +826,52 @@ async function createAndPollForTunnelDetails(event: Electron.IpcMainInvokeEvent,
       message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 
       data: { agentId } 
     };
+  }
+}
+
+async function updateTunnelPort(
+  tunnelId: string,
+  agentId: string,
+  oldPort: number,
+  newPort: number,
+  sessionCookie: string
+): Promise<boolean> {
+  devLog('[Port Tracking] Attempting port update:', { oldPort, newPort });
+  try {
+    const url = `https://playit.gg/account/tunnels/${tunnelId}?_data=routes%2Faccount%2Ftunnels%2F%24tunnelId`;
+    const headers = {
+      "accept": "*/*",
+      "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+      "cookie": `__session=${sessionCookie}`
+    };
+    const body = `_action=local-address&agent_id=${agentId}&local_ip_og=127.0.0.1&local_port_og=${oldPort}&local_ip=&local_port=${newPort}`;
+
+    devLog(`Updating tunnel port: ${oldPort} -> ${newPort}`);
+    devLog(`Request URL: ${url}`);
+    devLog(`Request headers: ${JSON.stringify(headers, null, 2)}`);
+    devLog(`Request body: ${body}`);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body
+    });
+
+    devLog(`Response status: ${response.status}`);
+    devLog(`Response headers: ${JSON.stringify([...response.headers.entries()], null, 2)}`);
+    
+    const responseText = await response.text();
+    devLog(`Response body: ${responseText}`);
+
+    if (!response.ok) {
+      devError(`Port update failed with status ${response.status}: ${responseText}`);
+      return false;
+    }
+
+    devLog('Port update successful');
+    return true;
+  } catch (error) {
+    devError('Port update failed:', error instanceof Error ? error.message : String(error));
+    return false;
   }
 }
