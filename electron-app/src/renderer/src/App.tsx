@@ -7,6 +7,8 @@ import ServerStartupPage from "@/app/server-startup/page";
 import { Toaster } from "@/components/ui/toaster";
 import { usePerformanceSettingsStore } from "@/stores/step-stores";
 import { CloseButton } from "@/components/ui/CloseButton";
+import { useServerListStore } from "@/lib/servers-store";
+import { IPC_CHANNELS } from "@shared/types";
 
 // Helper for dev-only logging
 const devLog = (...args: any[]) => {
@@ -61,6 +63,39 @@ function App(): React.JSX.Element {
 
     initializeSystemInfo();
   }, []); // Empty dependency array - setSystemInfo is stable from Zustand
+
+  useEffect(() => {
+    const handleAppClosing = async () => {
+      try {
+        const { servers } = useServerListStore.getState();
+        await Promise.all(
+          servers.map(server => 
+            window.electronAPI.ipcRenderer.invoke(
+              IPC_CHANNELS.UPDATE_SERVER,
+              {
+                serverId: server.id,
+                updates: { 
+                  status: 'offline',
+                  lastActive: Date.now(),
+                  onlinePlayers: 0
+                }
+              }
+            )
+          )
+        );
+        window.electronAPI.ipcRenderer.send('APP_CLOSING_ACK');
+      } catch (error) {
+        console.error('Failed to update servers:', error);
+      }
+    };
+
+    devLog('Registering APP_CLOSING listener');
+    window.electronAPI.ipcRenderer.on('APP_CLOSING', handleAppClosing);
+    return () => {
+      devLog('Cleaning up APP_CLOSING listener');
+      window.electronAPI.ipcRenderer.off('APP_CLOSING', handleAppClosing);
+    };
+  }, []);
 
   return (
     <>

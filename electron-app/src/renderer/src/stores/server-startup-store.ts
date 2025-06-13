@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { IPC_CHANNELS} from "@shared/types"
 import { useServerConfigStore } from './server-config-store'
 import { useServerListStore } from "@/lib/servers-store"
+import { devLog, devError } from '@shared/utils/logger'
 
 // Add a counter for generating unique IDs
 let messageIdCounter = 0;
@@ -9,7 +10,8 @@ let messageIdCounter = 0;
 type StatusMessage = {
   message: string
   status: "pending" | "success" | "error"
-  id: string // Add unique ID
+  id: string
+  data?: { port?: number }
 }
 
 type ConsoleMessage = {
@@ -59,10 +61,17 @@ interface ServerStartupState {
   executeStep: (step: number, config: any, onComplete: () => void, onRetry: () => void) => Promise<void>
   startServerSetup: (config, onComplete, onRetry) => Promise<void>
   startupSteps: StartupStep[];
-  updateStatus: (status: "pending" | "success" | "error", message?: string) => void
+  updateStatus: (status: "pending" | "success" | "error", message?: string, portData?: { port?: number }) => void
   mainProcessError: string | null;
   setMainProcessError: (error: string | null) => void;
-  handleStep: (step: StartupStep) => Promise<{ success: boolean; message?: string }>;
+  handleStep: (step: StartupStep) => Promise<{ success: boolean; message?: string; port?: number }>;
+  onComplete: () => void;
+  onRetry: () => void;
+  serverId: string;
+  isIdLocked: boolean;
+  lockServerId: () => void;
+  nextAvailablePort: number;
+  getNextAvailablePort: () => Promise<number>;
 }
 
 type ServerStartupStore = ServerStartupState;
@@ -98,6 +107,11 @@ const initialState = {
     }
   ],
   mainProcessError: null,
+  onComplete: () => {},
+  onRetry: () => {},
+  serverId: `server-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Generate ID on creation
+  isIdLocked: false, // Add this flag
+  nextAvailablePort: 25565, // Starting port
 }
 
 export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
@@ -126,7 +140,18 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   setDnsAddress: (address) => set({ dnsAddress: address }),
   setHasRun: (hasRun) => set({ hasRun }),
 
-  reset: () => set(initialState),
+  reset: () => {
+    const currentState = get();
+    const newServerId = currentState.isIdLocked 
+      ? currentState.serverId 
+      : `server-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    set({ 
+      ...initialState,
+      serverId: newServerId,
+      isIdLocked: currentState.isIdLocked
+    });
+  },
 
   setMinecraftServerStatusDetails: (details) => set({ minecraftServerStatusDetails: details }),
 
@@ -176,22 +201,19 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
       type?: string;
       address?: string;
     }) => {
-      if (data.type === 'tunnel' || data.type === 'minecraft') {
-        setMinecraftServerStatusDetails(data.status || null);
-        if (data.address) {
-          get().setDnsAddress(data.address);
-        }
-      }
+      setMinecraftServerStatusDetails(data.status || null);
     };
 
+    // Remove existing listeners first to avoid duplicates
+    get().cleanupListeners();
+
+    // Add new listeners
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleServerErrorOutput);
     window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatusUpdate);
 
     return () => {
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleServerOutput);
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleServerErrorOutput);
-      window.electronAPI.ipcRenderer.removeListener(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatusUpdate);
+      get().cleanupListeners();
     };
   },
 
@@ -216,130 +238,184 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   },
 
   handleRetry: () => {
-    const { reset } = get();
+    const { reset, clearConsoleMessages, setupListeners, executeStep } = get();
+    const { config } = useServerConfigStore.getState();
+    
+    // Reset state
     reset();
+    clearConsoleMessages();
+    setupListeners();
+    
+    // Kill any existing server process
+    window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_STOP)
+      .catch(() => {});  // Ignore errors if no server is running
+    
+    // Add a short delay to prevent immediate retries
+    setTimeout(() => {
+      executeStep(0, config, get().onComplete, get().onRetry);
+    }, 2000);  // 2-second delay
   },
 
   executeStep: async (stepIndex, config, onComplete, onRetry) => {
+    set({ onComplete, onRetry });
     if (get().isError || get().isComplete) return;
 
     const step = get().startupSteps[stepIndex];
     set({ currentStep: stepIndex, mainProcessError: null });
     get().updateStatus("pending");
 
+    // Setup listeners on the first step
+    if (stepIndex === 0) {
+      get().setupListeners();
+    }
+
     try {
       const result = await get().handleStep(step);
+      devLog(`[Port Tracking] Step ${stepIndex} completed with port data:`, {
+        port: result.port,
+        serverId: get().serverId
+      });
       
       if (!result.success) {
         const errorMessage = `Error: ${result.message || "Unknown error"}`;
         get().setMainProcessError(errorMessage);
         get().updateStatus("error");
+        get().cleanupListeners(); // Cleanup on error
         return;
       }
 
       get().updateStatus("success");
       
+      // Store the port from this step's result
+      const portData = result.port ? { port: result.port } : undefined;
+      get().updateStatus("success", undefined, portData);
+
       if (stepIndex < get().startupSteps.length - 1) {
         await get().executeStep(stepIndex + 1, config, onComplete, onRetry);
+      } else {
+        // Cleanup listeners on successful completion (last step)
+        get().cleanupListeners();
       }
-    } catch (error: unknown) {
-      const errorMessage = `Error: ${error instanceof Error ? error.message : "Unknown error"}`;
-      get().setMainProcessError(errorMessage);
+    } catch (error) {
+      get().setMainProcessError(error instanceof Error ? error.message : "Unknown error");
       get().updateStatus("error");
+      get().cleanupListeners();
     }
   },
 
   startServerSetup: async (config, onComplete, onRetry) => {
-    const { reset, clearConsoleMessages, executeStep, setupListeners } = get();
+    const { reset, lockServerId, executeStep } = get();
     
-    // Ensure complete reset
+    // Reset but preserve ID if locked
     reset();
-    clearConsoleMessages();
-    setupListeners();
+    lockServerId(); // Prevent ID changes during setup
     
-    // Start the process
+    console.log('Starting server setup with ID:', get().serverId);
     return executeStep(0, config, onComplete, onRetry);
   },
 
-  updateStatus: (status: "pending" | "success" | "error", message?: string) => {
+  updateStatus: (status: "pending" | "success" | "error", message?: string, portData?: { port?: number }) => {
     const stepIndex = get().currentStep;
     const step = get().startupSteps[stepIndex];
     
-    // Always use the step's predefined messages
-    const displayMessage = status === "error" 
-      ? step.error 
-      : step.message;
+    const displayMessage = status === "error" ? step.error : step.message;
 
     set((state) => {
       const newStatusMessages = [...state.statusMessages];
-      
-      // Update current step status
+      const msg = {
+        id: `msg-${messageIdCounter++}`,
+        status,
+        message: message || displayMessage,
+        ...(portData && { data: portData }) // Properly include portData in the message
+      };
+
       if (newStatusMessages.length > stepIndex) {
-        newStatusMessages[stepIndex] = { 
-          ...newStatusMessages[stepIndex], 
-          status,
-          message: displayMessage
-        };
+        newStatusMessages[stepIndex] = msg;
       } else {
-        newStatusMessages.push({
-          id: `msg-${messageIdCounter++}`,
-          status,
-          message: displayMessage
-        });
+        newStatusMessages.push(msg);
       }
 
       return {
         statusMessages: newStatusMessages,
         isError: status === "error",
-        isComplete: status === "success" && stepIndex === state.startupSteps.length - 1,
-        ...(status === "error" && { error: displayMessage })
+        isComplete: status === "success" && stepIndex === state.startupSteps.length - 1
       };
     });
   },
 
   setMainProcessError: (error: string | null) => set({ mainProcessError: error }),
 
+  getNextAvailablePort: async () => {
+    let port = get().nextAvailablePort;
+    while (await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.CHECK_PORT, port)) {
+      port++;
+    }
+    set({ nextAvailablePort: port + 1 }); // Reserve next port
+    return port;
+  },
+
   handleStep: async (step) => {
     const { config } = useServerConfigStore.getState();
+    const { serverId } = get();
     
     switch (step.handler) {
       case IPC_CHANNELS.SERVER_PREPARE_FILES:
+        const port = await get().getNextAvailablePort();
         const prepResult = await window.electronAPI.ipcRenderer.invoke(
           IPC_CHANNELS.SERVER_PREPARE_FILES, 
           { 
+            serverId,
             serverDirectory: config.serverDirectory,
             serverType: config.serverType,
             ramGB: config.ram,
-            javaPath: config.javaPath
+            javaPath: config.javaPath,
+            port
           }
         );
-        return prepResult;
+        return { 
+          ...prepResult, 
+          port: prepResult.port || port
+        };
 
       case IPC_CHANNELS.SERVER_START:
         const startResult = await window.electronAPI.ipcRenderer.invoke(
           IPC_CHANNELS.SERVER_START,
           {
+            serverId: get().serverId,
             serverDirectory: config.serverDirectory,
             serverType: config.serverType,
             ram: config.ram,
             javaPath: config.javaPath
           }
         );
-        return startResult;
+        return { 
+          ...startResult,
+          port: startResult.port
+        };
 
       case IPC_CHANNELS.TUNNEL_START:
+        // Get port from the SERVER_START step's result
+        const serverPort = get().statusMessages[get().currentStep - 1]?.data?.port;
+        if (!serverPort) {
+          throw new Error('No server port available for tunnel creation');
+        }
+        
         const tunnelResult = await window.electronAPI.ipcRenderer.invoke(
           IPC_CHANNELS.TUNNEL_START,
-          { serverPort: 25565 }
+          { serverPort }
         );
-        
+
         if (tunnelResult.success) {
           const domain = tunnelResult.data.assignedDomain || tunnelResult.data.staticIp4;
+          const actualPort = tunnelResult.data.assignedPort || serverPort;
+          
+          // Update store with domain and complete the process
           get().setDnsAddress(domain);
+          get().setIsComplete(true);
 
-          const serverId = `server-${Date.now()}`;
+          // Update server list store
           const serverData = {
-            id: serverId,
+            id: get().serverId,
             name: 'Vanilla Server',
             status: 'online',
             version: '1.21.5',
@@ -351,20 +427,27 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
             gameMode: 'survival',
             icon: 'default.png',
             serverType: config.serverType,
-            ramGB: config.ram
+            ramGB: config.ram,
+            javaPath: config.javaPath,
+            port: actualPort,
+            playitTunnelId: tunnelResult.data.tunnelId,
           };
 
-          // 1. First add the server
+          // Add server to the list and select it
           const updatedServers = await window.electronAPI.ipcRenderer.invoke(
             IPC_CHANNELS.ADD_SERVER,
             serverData
           );
 
-          // 2. Then update both stores
           useServerListStore.setState({
             servers: updatedServers,
-            selectedServerId: serverId // Directly set the selected ID
+            selectedServerId: get().serverId
           });
+
+          return {
+            ...tunnelResult,
+            port: actualPort
+          };
         }
         return tunnelResult;
 
@@ -372,4 +455,6 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
         return { success: false, message: 'Unknown step' };
     }
   },
+
+  lockServerId: () => set({ isIdLocked: true }),
 })) 

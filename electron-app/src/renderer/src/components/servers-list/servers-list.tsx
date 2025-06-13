@@ -2,9 +2,10 @@
 
 import type React from "react"
 import { Server, ServerStatus, ServerType } from "@/lib/servers-store"
-import { useMemo, useEffect } from "react"
+import { IPC_CHANNELS } from "@shared/types"
+import { useMemo, useEffect, useState } from "react"
 import { motion } from "framer-motion"
-import { Plus, Search, Filter, Power, Trash2, Pencil, Sparkles, Zap, Rocket } from "lucide-react"
+import { Plus, Search, Filter, Power, Trash2, Pencil, Sparkles, Zap, Rocket, Loader2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +19,9 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { useServerListStore } from "@/lib/servers-store"
 import { useServerListUIStore } from "@/stores/server-list-ui-store"
+import { devLog, devError} from '@shared/utils/logger'
+import path from 'path'
+import { ErrorBoundary } from "react-error-boundary"
 
 // Pure function for time formatting
 const formatLastActive = (timestamp: number): string => {
@@ -27,6 +31,10 @@ const formatLastActive = (timestamp: number): string => {
   if (diff < 3600000) return `${Math.floor(diff / 60000)} minute${Math.floor(diff / 60000) > 1 ? "s" : ""} ago`
   if (diff < 86400000) return `${Math.floor(diff / 3600000)} hour${Math.floor(diff / 3600000) > 1 ? "s" : ""} ago`
   return `${Math.floor(diff / 86400000)} day${Math.floor(diff / 86400000) > 1 ? "s" : ""} ago`
+}
+
+function ErrorFallback() {
+  return <div className="p-4 text-red-500">Temporary error - Reloading...</div>;
 }
 
 // Separate component for empty state to flatten conditional logic
@@ -174,9 +182,10 @@ export function ServersList() {
     stopEditing,
   } = useServerListUIStore()
 
-  // Computed values instead of useEffect - explicit logic
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
+
   const filteredServers = useMemo(() => {
-    return servers.filter((server) => {
+    return (servers || []).filter((server) => {
       const matchesSearch =
         server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         server.playitDomain?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -197,14 +206,63 @@ export function ServersList() {
   const handleCreateServer = () => navigate("/create-server")
   const handleServerClick = (serverId: string) => navigate(`/dashboard?serverId=${serverId}`)
   
-  const handleToggleStatus = (e: React.MouseEvent, serverId: string, currentStatus: string) => {
-    e.stopPropagation()
-    toggleServerStatus(serverId)
-    toast({
-      title: `Server ${currentStatus === "online" ? "stopping" : "starting"}`,
-      description: `${currentStatus === "online" ? "Stopping" : "Starting"} server...`,
-    })
-  }
+  const handleToggleStatus = async (e: React.MouseEvent, serverId: string, currentStatus: string) => {
+    e.stopPropagation();
+    if (loadingIds.has(serverId)) return;
+
+    const action = currentStatus === 'online' ? 'stop' : 'start';
+    const targetStatus = action === 'stop' ? 'stopping' : 'starting';
+    const fallbackStatus = action === 'stop' ? 'online' : 'offline';
+
+    // Add the serverId to loadingIds before starting
+    setLoadingIds(prev => new Set(prev).add(serverId));
+    useServerListStore.setState(state => ({
+      servers: state.servers.map(s => 
+        s.id === serverId ? { ...s, status: targetStatus } : s
+      )
+    }));
+
+    try {
+      const { success, error, port } = await window.electronAPI.ipcRenderer.invoke(
+        action === 'start' ? IPC_CHANNELS.START_EXISTING_SERVER : IPC_CHANNELS.STOP_EXISTING_SERVER,
+        { serverId }
+      );
+
+      if (success) {
+        // Refresh only after success, and update the specific server
+        await useServerListStore.getState().refresh();  // Still refresh, but we can optimize later if needed
+        if (action === 'start' && port) {
+          useServerListStore.setState(state => ({
+            servers: state.servers.map(s => 
+              s.id === serverId ? { ...s, port } : s
+            )
+          }));
+        }
+      } else {
+        // Revert only the specific server on failure
+        useServerListStore.setState(state => ({
+          servers: state.servers.map(s => 
+            s.id === serverId ? { ...s, status: fallbackStatus } : s
+          )
+        }));
+        throw new Error(error || `Server ${action} failed`);
+      }
+    } catch (error) {
+      useServerListStore.setState(state => ({
+        servers: state.servers.map(s => 
+          s.id === serverId ? { ...s, status: fallbackStatus } : s
+        )
+      }));
+      toast({ title: 'Error', description: (error as Error).message, variant: 'destructive' });
+    } finally {
+      // Remove the serverId from loadingIds after operation
+      setLoadingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(serverId);
+        return newSet;
+      });
+    }
+  };
 
   const handleDeleteServer = (e: React.MouseEvent, server: Server) => {
     e.stopPropagation()
@@ -216,6 +274,30 @@ export function ServersList() {
       })
     }
   }
+
+  /*const handlePortChange = async (serverId: string, newPort: number) => {
+    const server = servers.find(s => s.id === serverId);
+    if (!server?.playitTunnelId) return;
+
+    const success = await window.electronAPI.ipcRenderer.invoke(
+      'UPDATE_TUNNEL_PORT', 
+      {
+        tunnelId: server.playitTunnelId,
+        oldPort: server.port,
+        newPort
+      }
+    );
+
+    if (success) {
+      // Update local state
+      useServerListStore.setState(state => ({
+        servers: state.servers.map(s => 
+          s.id === serverId ? {...s, port: newPort} : s
+        )
+      }));
+    }
+    return success;
+  };*/
 
   const handleSaveEdit = () => {
     if (editingServerId && editValue.trim()) {
@@ -233,10 +315,11 @@ export function ServersList() {
   }
 
   return (
-    <div className="container mx-auto py-10 px-4 bg-night min-h-screen">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          <h1 className="text-3xl font-bold text-linen">My Minecraft Servers</h1>
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <div className="container mx-auto py-10 px-4 bg-night min-h-screen">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <h1 className="text-3xl font-bold text-linen">My Minecraft Servers</h1>
 
           {servers.length > 0 && (
             <Button onClick={handleCreateServer} className="flex items-center gap-2">
@@ -352,22 +435,41 @@ export function ServersList() {
                       />
                     </div>
                     <div className="flex items-center gap-2">
-                      <ServerNameDisplay
-                        server={server}
-                        isEditing={editingServerId === server.id}
-                        editValue={editValue}
-                        onStartEdit={() => startEditing(server.id, server.name)}
-                        onUpdateValue={setEditValue}
-                        onSaveEdit={handleSaveEdit}
-                        onCancelEdit={stopEditing}
-                      />
+                      {editingServerId === server.id ? (
+                        <form onSubmit={e => { e.preventDefault(); renameServer(server.id, editValue); stopEditing(); }}>
+                          <input
+                            className="bg-night border-cool-gray/30 text-linen rounded px-2 py-1 text-xl font-semibold w-32"
+                            value={editValue}
+                            onChange={e => setEditValue(e.target.value)}
+                            autoFocus
+                            onBlur={e => { e.stopPropagation(); renameServer(server.id, editValue); stopEditing(); }}
+                            onClick={e => e.stopPropagation()}
+                            onFocus={e => e.stopPropagation()}
+                          />
+                        </form>
+                      ) : (
+                        <>
+                          <h3 className="text-xl font-semibold text-linen">{server.name}</h3>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEditing(server.id, server.name);
+                            }}
+                            className="ml-1 p-1 hover:bg-cool-gray/20 rounded"
+                          >
+                            <Pencil className="h-4 w-4 text-cool-gray" />
+                          </button>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge
                         className={`${
-                          server.status === "online"
-                            ? "bg-green-500/20 text-green-400 border-green-500/50"
-                            : "bg-red-500/20 text-red-400 border-red-500/50"
+                          server.status === "online" 
+                            ? "bg-green-500/20 text-green-400 border-green-500/50" 
+                            : server.status === "offline"
+                              ? "bg-red-500/20 text-red-400 border-red-500/50"
+                              : "bg-yellow-500/20 text-yellow-400 border-yellow-500/50"
                         } border`}
                       >
                         {server.status === "online" ? (
@@ -376,10 +478,22 @@ export function ServersList() {
                             animate={{ opacity: [1, 0.5, 1] }}
                             transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
                           />
-                        ) : (
+                        ) : server.status === "offline" ? (
                           <div className="h-2 w-2 rounded-full bg-red-400 mr-1.5" />
+                        ) : (
+                          <motion.div
+                            className="h-2 w-2 rounded-full bg-yellow-400 mr-1.5"
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY }}
+                          />
                         )}
-                        {server.status === "online" ? "Online" : "Offline"}
+                        {server.status === "online" 
+                          ? "Online" 
+                          : server.status === "offline" 
+                            ? "Offline" 
+                            : server.status === "starting" 
+                              ? "Starting..." 
+                              : "Stopping..."}
                       </Badge>
                     </div>
                   </div>
@@ -400,9 +514,18 @@ export function ServersList() {
                         size="sm"
                         className="h-8 w-8 p-0"
                         onClick={(e) => handleToggleStatus(e, server.id, server.status)}
+                        disabled={loadingIds.has(server.id)}
                       >
-                        <Power size={14} className={server.status === "online" ? "text-red-400" : "text-green-400"} />
-                        <span className="sr-only">{server.status === "online" ? "Stop" : "Start"} server</span>
+                        {loadingIds.has(server.id) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Power size={14} className={server.status === "online" ? "text-red-400" : "text-green-400"} />
+                        )}
+                        <span className="sr-only">
+                          {loadingIds.has(server.id) 
+                            ? "Processing..." 
+                            : server.status === "online" ? "Stop" : "Start"} server
+                        </span>
                       </Button>
                       <Button
                         variant="outline"
@@ -419,10 +542,11 @@ export function ServersList() {
                   <div className="text-xs text-cool-gray mt-1">Domain: {server.playitDomain}</div>
                 </div>
               </motion.div>
-            ))}
-          </div>
-        )}
-      </motion.div>
-    </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      </div>
+    </ErrorBoundary>
   )
 }

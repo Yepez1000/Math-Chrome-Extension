@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { IPC_CHANNELS } from "@shared/types";
+import { IPC_CHANNELS } from '../../../shared/types';
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping";
 export type GameMode = "survival" | "creative" | "adventure" | "spectator";
@@ -18,19 +18,19 @@ export interface Server {
   gameMode: GameMode;
   serverType: ServerType;
   icon?: string;
+  playitTunnelId?: string;
+  port: number;
 }
 
 interface ServerListState {
   servers: Server[];
   selectedServerId: string | null;
   refresh: () => Promise<void>;
-  addServer: (
-   server: Omit<Server, "id" | "lastActive" | "serverType"> & {
-     id?: string;
-     serverType?: ServerType;
-   }
- ) => Promise<void>;
-  //updateServer: (id: string, updates: Partial<Server>) => Promise<void>;
+  addServer: (server: Omit<Server, "id" | "lastActive"> & { id?: string }) => Promise<void>;
+  updateServer: (
+    serverId: string, 
+    updates: Partial<Server>
+  ) => Promise<void>;
   removeServer: (serverId: string) => Promise<void>;
   renameServer: (serverId: string, newName: string) => Promise<void>;
   toggleServerStatus: (serverId: string) => void;
@@ -39,7 +39,7 @@ interface ServerListState {
 
 const DEFAULT_ICON = "/placeholder.svg?height=40&width=40";
 
-export const useServerListStore = create<ServerListState>((set, get) => ({
+export const useServerListStore = create<ServerListState>((set) => ({
   servers: [],
   selectedServerId: null,
 
@@ -67,13 +67,13 @@ export const useServerListStore = create<ServerListState>((set, get) => ({
     set({ servers: updatedList });
   },
 
-  /*updateServer: async (id, updates) => {
+  updateServer: async (serverId, updates) => {
     const updatedList = await window.electronAPI.ipcRenderer.invoke(
       IPC_CHANNELS.UPDATE_SERVER,
-      { id, updates }
+      { serverId, updates }
     );
     set({ servers: updatedList });
-  },*/
+  },
 
   removeServer: async (serverId) => {
     const updatedList = await window.electronAPI.ipcRenderer.invoke(
