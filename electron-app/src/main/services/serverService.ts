@@ -18,17 +18,13 @@ export async function startExistingServer(serverId: string, serverDirectory: str
   let port = portMatch ? parseInt(portMatch[1]) : 25565;
   devLog('[Port Tracking] Starting existing server with initial port:', port);
 
-  // Check if port is available
-  const portInUse = await checkPort(port);
-  if (!portInUse) {
-    port = await findAvailablePort(port);
-    // Update server.properties with new port
-    const updatedProperties = properties.replace(
-      /server-port=\d+/g,
-      `server-port=${port}`
-    );
-    await fs.writeFile(path.join(serverDirectory, 'server.properties'), updatedProperties);
-  }
+  port = await findAvailablePort(port);
+  // Update server.properties with new port
+  const updatedProperties = properties.replace(
+    /server-port=\d+/g,
+    `server-port=${port}`
+  );
+  await fs.writeFile(path.join(serverDirectory, 'server.properties'), updatedProperties);
 
   devLog('[Port Tracking] Final server port:', port);
 

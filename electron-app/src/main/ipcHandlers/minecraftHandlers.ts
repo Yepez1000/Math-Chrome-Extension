@@ -154,10 +154,13 @@ async function cleanupServerFiles(serverDirectory: string) {
 }
 
 // Add port checking utility
-export async function findAvailablePort(startPort: number, existingPorts: number[] = []): Promise<number> {
+export async function findAvailablePort(startPort: number, existingPorts: number[] = []) {
   let port = startPort;
   while (await checkPort(port) || existingPorts.includes(port)) {
     port++;
+    if (port > 65535) {
+      port = 1024; // Wrap around to avoid overflow
+    }
   }
   return port;
 }
