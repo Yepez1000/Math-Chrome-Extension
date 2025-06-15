@@ -301,7 +301,7 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
             variant="outline"
             onClick={handleToggleExpansion}
             disabled={isAnimating}
-            className="text-linen bg-space-cadet hover:text-linen hover:bg-linen/10 transition-colors"
+            className="text-linen border-linen bg-space-cadet hover:text-linen hover:bg-linen/10 transition-colors"
           >
             {isExpanded ? (
               <>
