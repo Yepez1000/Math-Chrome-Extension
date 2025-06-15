@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { motion, AnimatePresence } from "framer-motion"
-import { CuboidIcon as Cube, Cpu, Zap, Leaf, Hammer, Feather, Archive} from "lucide-react"
+import { CuboidIcon as Cube, Cpu, Zap, Leaf, Hammer, Feather, Archive, ChevronDown, ChevronUp} from "lucide-react"
 import { useServerConfigStore, ServerConfig } from "@/stores/server-config-store"
 import { useFlavorSelectionStore } from "@/stores/step-stores"
 
@@ -213,15 +213,25 @@ const ServerTypeCard = ({ type, isSelected, onSelect }: { type: ServerTypeInfo; 
 
 export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
   const { config, updateConfig } = useServerConfigStore()
-  const { selectedType, setSelectedType, carouselPage, setCarouselPage, isAnimating, setIsAnimating } = useFlavorSelectionStore()
+  const { 
+    selectedType, 
+    setSelectedType, 
+    isExpanded, 
+    setIsExpanded, 
+    isAnimating, 
+    setIsAnimating,
+    topRowTypes,
+    bottomRowTypes,
+    swapRows
+  } = useFlavorSelectionStore()
 
-  // Page 1: Vanilla, Paper, Forge
-  // Page 2: Spigot, Fabric, Bukkit
-  const page1Types = serverTypes.slice(0, 3)
-  const page2Types = serverTypes.slice(3, 6)
+  // Get server type info based on current row arrangement
+  const topRowServerTypes = topRowTypes.map(id => serverTypes.find(type => type.id === id)!).filter(Boolean)
+  const bottomRowServerTypes = bottomRowTypes.map(id => serverTypes.find(type => type.id === id)!).filter(Boolean)
 
   const handleServerTypeSelect = (type: ServerType) => {
     setSelectedType(type)
+    
     const serverTypeInfo = serverTypes.find((t) => t.id === type)
     if (serverTypeInfo) {
       updateConfig({
@@ -235,17 +245,21 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
     updateConfig({ hostingMode: value })
   }
 
-  const handleNextPage = () => {
+  const handleToggleExpansion = () => {
     if (!isAnimating) {
-      setIsAnimating(true)
-      setCarouselPage(2)
-    }
-  }
-
-  const handlePrevPage = () => {
-    if (!isAnimating) {
-      setIsAnimating(true)
-      setCarouselPage(1)
+      if (isExpanded) {
+        // When collapsing, check if selected type is in bottom row
+        // If so, swap rows to bring selection to top before collapsing
+        const isSelectedInBottomRow = selectedType && bottomRowTypes.includes(selectedType)
+        if (isSelectedInBottomRow) {
+          swapRows()
+          setIsExpanded(false)
+        } else {
+          setIsExpanded(false)
+        }
+      } else {
+        setIsExpanded(true)
+      }
     }
   }
 
@@ -261,59 +275,81 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
         <p className="text-cool-gray">Select the type of Minecraft server you want to run</p>
       </motion.div>
 
-      <div className="relative overflow-hidden py-3">
-        <AnimatePresence initial={false} mode="wait" onExitComplete={() => setIsAnimating(false)}>
-          {carouselPage === 1 ? (
+      <div className="space-y-4">
+        {/* Top Row - Always Visible */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 gap-4"
+          key={`top-row-${topRowTypes.join('-')}`}
+        >
+          {topRowServerTypes.map((type) => (
             <motion.div
-              key="page1"
-              className="grid grid-cols-1 md:grid-cols-3 gap-4"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={pageVariants}
+              key={type.id}
+              variants={itemVariants}
             >
-              {page1Types.map((type) => (
-                <ServerTypeCard
-                  key={type.id}
-                  type={type}
-                  isSelected={selectedType === type.id}
-                  onSelect={() => handleServerTypeSelect(type.id)}
-                />
-              ))}
+              <ServerTypeCard
+                type={type}
+                isSelected={selectedType === type.id}
+                onSelect={() => handleServerTypeSelect(type.id)}
+              />
             </motion.div>
-          ) : (
+          ))}
+        </div>
+
+        {/* Show More/Less Toggle Button */}
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            onClick={handleToggleExpansion}
+            disabled={isAnimating}
+            className="text-linen bg-space-cadet hover:text-linen hover:bg-linen/10 transition-colors"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="h-4 w-4 mr-2" />
+                Show Less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Show More Server Types
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Bottom Row - Collapsible */}
+        <AnimatePresence>
+          {isExpanded && (
             <motion.div
-              key="page2"
               className="grid grid-cols-1 md:grid-cols-3 gap-4"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={pageVariants}
+              initial={{ opacity: 0, height: 0, y: -20 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -20 }}
+                             transition={{
+                 duration: 0.3,
+                 ease: "easeOut",
+                 staggerChildren: 0.05,
+               }}
+               key={`bottom-row-${bottomRowTypes.join('-')}`}
             >
-              {page2Types.map((type) => (
-                <ServerTypeCard
+              {bottomRowServerTypes.map((type) => (
+                <motion.div
                   key={type.id}
-                  type={type}
-                  isSelected={selectedType === type.id}
-                  onSelect={() => handleServerTypeSelect(type.id)}
-                />
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                >
+                  <ServerTypeCard
+                    type={type}
+                    isSelected={selectedType === type.id}
+                    onSelect={() => handleServerTypeSelect(type.id)}
+                  />
+                </motion.div>
               ))}
             </motion.div>
           )}
         </AnimatePresence>
-
-        <div className="flex justify-center mt-4 gap-2">
-          <button
-            className={`h-2 w-8 rounded-full transition-colors ${carouselPage === 1 ? "bg-linen" : "bg-cool-gray/30"}`}
-            onClick={() => carouselPage !== 1 && handlePrevPage()}
-            aria-label="Go to page 1"
-          />
-          <button
-            className={`h-2 w-8 rounded-full transition-colors ${carouselPage === 2 ? "bg-linen" : "bg-cool-gray/30"}`}
-            onClick={() => carouselPage !== 2 && handleNextPage()}
-            aria-label="Go to page 2"
-          />
-        </div>
       </div>
 
       <motion.div

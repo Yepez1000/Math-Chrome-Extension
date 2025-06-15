@@ -16,22 +16,40 @@ export const useDetectMinecraftStore = create<DetectMinecraftState>((set) => ({
 // Flavor Selection Step Store
 interface FlavorSelectionState {
   selectedType: "vanilla" | "paper" | "forge" | "spigot" | "fabric" | "bukkit" | null
-  carouselPage: 1 | 2
+  isExpanded: boolean
   isAnimating: boolean
+  topRowTypes: ("vanilla" | "paper" | "forge" | "spigot" | "fabric" | "bukkit")[]
+  bottomRowTypes: ("vanilla" | "paper" | "forge" | "spigot" | "fabric" | "bukkit")[]
   setSelectedType: (type: "vanilla" | "paper" | "forge" | "spigot" | "fabric" | "bukkit" | null) => void
-  setCarouselPage: (page: 1 | 2) => void
+  setIsExpanded: (isExpanded: boolean) => void
   setIsAnimating: (isAnimating: boolean) => void
+  swapRows: () => void
   reset: () => void
 }
 
-export const useFlavorSelectionStore = create<FlavorSelectionState>((set) => ({
-  selectedType: null,
-  carouselPage: 1,
+export const useFlavorSelectionStore = create<FlavorSelectionState>((set, get) => ({
+  selectedType: "vanilla",
+  isExpanded: false,
   isAnimating: false,
+  topRowTypes: ["vanilla", "paper", "forge"],
+  bottomRowTypes: ["spigot", "fabric", "bukkit"],
   setSelectedType: (type) => set({ selectedType: type }),
-  setCarouselPage: (page) => set({ carouselPage: page }),
+  setIsExpanded: (isExpanded) => set({ isExpanded }),
   setIsAnimating: (isAnimating) => set({ isAnimating }),
-  reset: () => set({ selectedType: null, carouselPage: 1, isAnimating: false }),
+  swapRows: () => {
+    const { topRowTypes, bottomRowTypes } = get()
+    set({ 
+      topRowTypes: bottomRowTypes, 
+      bottomRowTypes: topRowTypes
+    })
+  },
+  reset: () => set({ 
+    selectedType: "vanilla", 
+    isExpanded: false, 
+    isAnimating: false,
+    topRowTypes: ["vanilla", "paper", "forge"],
+    bottomRowTypes: ["spigot", "fabric", "bukkit"]
+  }),
 }))
 
 // Modpack Selection Step Store
