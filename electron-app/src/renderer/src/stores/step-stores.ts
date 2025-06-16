@@ -47,8 +47,8 @@ export const useFlavorSelectionStore = create<FlavorSelectionState>((set, get) =
     selectedType: "vanilla", 
     isExpanded: false, 
     isAnimating: false,
-    topRowTypes: ["vanilla", "paper", "forge"],
-    bottomRowTypes: ["spigot", "fabric", "bukkit"]
+    topRowTypes: ["paper", "vanilla", "forge"],
+    bottomRowTypes: ["spigot", "bukkit", "fabric"]
   }),
 }))
 
