@@ -159,16 +159,15 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
 
   const handleToggleExpansion = () => {
     if (!isAnimating) {
+      setIsAnimating(true) // Start animation
       if (isExpanded) {
         // When collapsing, check if selected type is in bottom row
         // If so, swap rows to bring selection to top before collapsing
         const isSelectedInBottomRow = selectedType && bottomRowTypes.includes(selectedType)
         if (isSelectedInBottomRow) {
           swapRows()
-          setIsExpanded(false)
-        } else {
-          setIsExpanded(false)
         }
+        setIsExpanded(false)
       } else {
         setIsExpanded(true)
       }
@@ -230,19 +229,22 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
         </div>
 
         {/* Bottom Row - Collapsible */}
-        <AnimatePresence>
+        <AnimatePresence
+          onExitComplete={() => setIsAnimating(false)} // Reset animation state when exit is complete
+        >
           {isExpanded && (
             <motion.div
               className="grid grid-cols-1 md:grid-cols-3 gap-4"
               initial={{ opacity: 0, height: 0, y: -20 }}
               animate={{ opacity: 1, height: "auto", y: 0 }}
               exit={{ opacity: 0, height: 0, y: -20 }}
-                             transition={{
-                 duration: 0.3,
-                 ease: "easeOut",
-                 staggerChildren: 0.05,
-               }}
-               key={`bottom-row-${bottomRowTypes.join('-')}`}
+              transition={{
+                duration: 0.3,
+                ease: "easeOut",
+                staggerChildren: 0.05,
+              }}
+              onAnimationComplete={() => setIsAnimating(false)} // Reset animation state when enter animation is complete
+              key={`bottom-row-${bottomRowTypes.join('-')}`}
             >
               {bottomRowServerTypes.map((type) => (
                 <motion.div
