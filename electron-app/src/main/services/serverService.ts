@@ -29,6 +29,43 @@ function sendToRenderer(channel: string, data: any) {
   }
 }
 
+// Helper functions for server cleanup
+async function handleLogFileCleanup(logPath: string, serverDirectory: string): Promise<void> {
+  if (fsSync.existsSync(logPath)) {
+    try {
+      await fs.rename(logPath, path.join(serverDirectory, 'logs', `latest_${Date.now()}.log.bak`));
+      devLog('Renamed locked log file');
+    } catch (err) {
+      devError(`Log file handling error: ${err}`);
+    }
+  }
+}
+
+async function handleSessionLockCleanup(sessionPath: string): Promise<void> {
+  if (fsSync.existsSync(sessionPath)) {
+    try {
+      await fs.unlink(sessionPath);
+      devLog('Removed stale session.lock file');
+    } catch (err) {
+      devError(`Session lock file handling error: ${err}`);
+    }
+  }
+}
+
+async function handleWorldLockCleanup(worldPath: string): Promise<void> {
+  if (fsSync.existsSync(worldPath)) {
+    const sessionLockPath = path.join(worldPath, 'session.lock');
+    if (fsSync.existsSync(sessionLockPath)) {
+      try {
+        await fs.unlink(sessionLockPath);
+        devLog('Removed stale world session.lock file');
+      } catch (err) {
+        devError(`World session lock file handling error: ${err}`);
+      }
+    }
+  }
+}
+
 // Pure function: Load config and spawn process
 export async function startExistingServer(serverId: string, serverDirectory: string, javaPath: string): Promise<void> {
   // First check if there's already a process running
@@ -60,38 +97,9 @@ export async function startExistingServer(serverId: string, serverDirectory: str
   const sessionPath = path.join(serverDirectory, 'session.lock');
 
   try {
-    // 1. Handle log file
-    if (fsSync.existsSync(logPath)) {
-      try {
-        await fs.rename(logPath, path.join(serverDirectory, 'logs', `latest_${Date.now()}.log.bak`));
-        devLog('Renamed locked log file');
-      } catch (err) {
-        devError(`Log file handling error: ${err}`);
-      }
-    }
-
-    // 2. Handle session.lock file
-    if (fsSync.existsSync(sessionPath)) {
-      try {
-        await fs.unlink(sessionPath);
-        devLog('Removed stale session.lock file');
-      } catch (err) {
-        devError(`Session lock file handling error: ${err}`);
-      }
-    }
-
-    // 3. Handle world directory locks
-    if (fsSync.existsSync(worldPath)) {
-      const sessionLockPath = path.join(worldPath, 'session.lock');
-      if (fsSync.existsSync(sessionLockPath)) {
-        try {
-          await fs.unlink(sessionLockPath);
-          devLog('Removed stale world session.lock file');
-        } catch (err) {
-          devError(`World session lock file handling error: ${err}`);
-        }
-      }
-    }
+    await handleLogFileCleanup(logPath, serverDirectory);
+    await handleSessionLockCleanup(sessionPath);
+    await handleWorldLockCleanup(worldPath);
   } catch (err) {
     devError(`File cleanup error: ${err}`);
   }

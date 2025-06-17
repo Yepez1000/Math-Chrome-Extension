@@ -17,30 +17,30 @@ export function ConsoleView() {
 
   // Debug selectedServerId changes
   useEffect(() => {
-    console.log('selectedServerId changed:', selectedServerId);
+    devLog('selectedServerId changed:', selectedServerId);
   }, [selectedServerId]);
 
   // Check server status on mount and when selectedServerId changes
   useEffect(() => {
-    console.log('Status check effect triggered with selectedServerId:', selectedServerId);
+    devLog('Status check effect triggered with selectedServerId:', selectedServerId);
     
     const checkServerStatus = async () => {
       if (!selectedServerId) {
-        console.log('No selectedServerId, skipping status check');
+        devLog('No selectedServerId, skipping status check');
         return;
       }
       
       try {
-        console.log('Fetching server list for status check...');
+        devLog('Fetching server list for status check...');
         const servers = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
         const server = servers.find((s: any) => s.id === selectedServerId);
-        console.log('Found server:', server);
+        devLog('Found server:', server);
         
         if (server?.status === 'online') {
-          console.log('Server is online, enabling console');
+          devLog('Server is online, enabling console');
           setIsServerRunning(true);
         } else {
-          console.log('Server is not online, status:', server?.status);
+          devLog('Server is not online, status:', server?.status);
         }
       } catch (error) {
         console.error('Failed to check server status:', error);
@@ -51,10 +51,10 @@ export function ConsoleView() {
   }, [selectedServerId]);
 
   useEffect(() => {
-    console.log('Server setup effect triggered with selectedServerId:', selectedServerId);
+    devLog('Server setup effect triggered with selectedServerId:', selectedServerId);
     
     if (!selectedServerId) {
-      console.log('No selectedServerId, skipping server setup');
+      devLog('No selectedServerId, skipping server setup');
       return;
     }
 
@@ -65,10 +65,10 @@ export function ConsoleView() {
         const server = servers.find((s: any) => s.id === selectedServerId);
         
         if (server?.status === 'online') {
-          console.log('Server is already online, initializing console');
+          devLog('Server is already online, initializing console');
           setIsServerRunning(true);
           // Add a welcome message to the console
-          setConsoleOutput(prev => [...prev, 'Server is running. Type a command to begin.']);
+          //setConsoleOutput(prev => [...prev, 'Server is running. Type a command to begin.']);
         }
       } catch (error) {
         console.error('Failed to initialize console:', error);
@@ -78,15 +78,15 @@ export function ConsoleView() {
     initializeConsole();
 
     const handleConsoleOutput = (_event: any, data: string) => {
-      console.log('Console output received - event:', _event);
-      console.log('Console output received - data:', data);
+      devLog('Console output received - event:', _event);
+      devLog('Console output received - data:', data);
       
       // Get the output data from either the event or data parameter
       const outputData = typeof _event === 'string' ? _event : data;
       
       // Only skip if both event and data are null/undefined
       if (!outputData) {
-        console.log('Received null or undefined data, skipping');
+        devLog('Received null or undefined data, skipping');
         return;
       }
       
@@ -98,16 +98,16 @@ export function ConsoleView() {
       
       // Check for server ready message
       if (outputData.includes('Done') || outputData.includes('For help, type "help"')) {
-        console.log('Server ready message detected, setting isServerRunning to true');
+        devLog('Server ready message detected, setting isServerRunning to true');
         setIsServerRunning(true);
       }
     }
 
     const handleConsoleError = (_event: any, data: string) => {
-      console.log('Console error received:', data);
+      devLog('Console error received:', data);
       // Ensure data is a string and not undefined
       if (!data) {
-        console.log('Received undefined or null error data, skipping');
+        devLog('Received undefined or null error data, skipping');
         return;
       }
       // Split error output into lines and add each line separately
@@ -118,12 +118,13 @@ export function ConsoleView() {
     }
 
     const handleServerStatus = async (_event: any, _data: any) => {
-      console.log('Server status update received - event:', _event);
-      console.log('Server status update received - data:', _data);
+      devLog('Server status update received - event:', _event);
+      devLog('Server status update received - data:', _data);
       
       // If we receive a stop status, immediately disable the console
-      if (_event?.status === "Server stopped") {
-        console.log('Server stopped status detected, disabling console');
+      const eventPayload = typeof _event === 'string' ? JSON.parse(_event) : _event;
+      if (eventPayload?.status === "Server stopped") {
+        devLog('Server stopped status detected, disabling console');
         setIsServerRunning(false);
         return;
       }
@@ -134,11 +135,11 @@ export function ConsoleView() {
         await useServerListStore.getState().refresh();
         const servers = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
         const server = servers.find((s: any) => s.id === selectedServerId);
-        console.log('Current server status:', server?.status);
+        devLog('Current server status:', server?.status);
         
         // If we have a server and it's online, set running to true
         if (server?.status === 'online') {
-          console.log('Server is online, enabling console');
+          devLog('Server is online, enabling console');
           setIsServerRunning(true);
           return;
         }
@@ -146,17 +147,17 @@ export function ConsoleView() {
         // If we have an event with status, check it
         if (_event) {
           const statusValue = typeof _event === 'string' ? _event : _event.status;
-          console.log('Event status value:', statusValue);
+          devLog('Event status value:', statusValue);
           
           if (statusValue === "Server running") {
-            console.log('Server running status detected, enabling console');
+            devLog('Server running status detected, enabling console');
             setIsServerRunning(true);
             return;
           }
         }
         
         // If we get here, server is not running
-        console.log('Server is not running, disabling console');
+        devLog('Server is not running, disabling console');
         setIsServerRunning(false);
       } catch (error) {
         console.error('Failed to check server status:', error);
@@ -172,7 +173,7 @@ export function ConsoleView() {
 
     // Cleanup listeners
     return () => {
-      console.log('Cleaning up server listeners');
+      devLog('Cleaning up server listeners');
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT);
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_ERROR);
       window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_STATUS_UPDATE);
