@@ -66,6 +66,7 @@ const api: ElectronAPI = {
         IPC_CHANNELS.START_EXISTING_SERVER,
         IPC_CHANNELS.STOP_EXISTING_SERVER,
         IPC_CHANNELS.CHECK_PORT,
+        IPC_CHANNELS.SERVER_SEND_COMMAND,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)
@@ -88,8 +89,32 @@ const api: ElectronAPI = {
         "APP_CLOSING"
       ] as const
       if ((validOnChannels as readonly string[]).includes(channel)) {
-        // Deliberately strip the event object
-        ipcRenderer.on(channel, (_event, ...args) => func(...args));
+        // Ensure data is a string before passing to renderer
+        ipcRenderer.on(channel, (_event, ...args) => {
+          try {
+            // Convert Buffer to string if needed and ensure we have a string
+            const processedArgs = args.map(arg => {
+              if (arg === undefined || arg === null) {
+                return '';
+              }
+              if (Buffer.isBuffer(arg)) {
+                return arg.toString();
+              }
+              if (typeof arg === 'string') {
+                return arg;
+              }
+              if (typeof arg === 'object') {
+                return JSON.stringify(arg);
+              }
+              return String(arg);
+            });
+            func(...processedArgs);
+          } catch (error) {
+            console.error('Error processing IPC data:', error);
+            // If there's an error, send an empty string to prevent undefined
+            func('');
+          }
+        });
       }
     },
     removeListener: (channel: string, func: (...args: any[]) => void) => {

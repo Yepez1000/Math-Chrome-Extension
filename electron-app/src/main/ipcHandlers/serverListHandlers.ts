@@ -88,6 +88,7 @@ export function registerServerListHandlers() {
       // Update only the specific server, but first verify its current status
       const updatedServers = servers.map(s => {
         if (s.id === serverId && s.status !== 'online') {
+          devLog(`!!!Successfully updated status for server ${serverId} to online`);
           return { ...s, status: 'online', lastActive: Date.now(), onlinePlayers: s.onlinePlayers };
         }
         return s;  // Explicitly return unchanged for others

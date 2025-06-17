@@ -5,45 +5,123 @@
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { Play, Square, RefreshCw, X } from "lucide-react"
-import { useServerStore } from "@/lib/store"
 import { useToast } from "@/hooks/use-toast"
+import { useServerListStore } from "@/lib/servers-store"
+import { IPC_CHANNELS } from "@shared/types"
 
 export function ServerControls() {
-  const { status, setStatus } = useServerStore()
   const { toast } = useToast()
+  const { selectedServerId, servers, refresh } = useServerListStore()
+  const selectedServer = servers.find(s => s.id === selectedServerId)
+  const status = selectedServer?.status || "offline"
 
-  const handleServerControl = (action: "start" | "stop" | "restart" | "kill") => {
-    // In a real app, this would call an API or IPC
-    if (action === "stop") {
-      setStatus("stopping")
-      setTimeout(() => setStatus("offline"), 2000)
+  const handleServerControl = async (action: "start" | "stop" | "restart" | "kill") => {
+    if (!selectedServerId) {
       toast({
-        title: "Server stopping",
-        description: "Your Minecraft server is shutting down...",
+        title: "Error",
+        description: "No server selected",
+        variant: "destructive"
       })
-    } else if (action === "start") {
-      setStatus("starting")
-      setTimeout(() => setStatus("online"), 3000)
+      return
+    }
+
+    try {
+      if (action === "stop") {
+        useServerListStore.setState(state => ({
+          servers: state.servers.map(s => 
+            s.id === selectedServerId ? { ...s, status: "stopping" } : s
+          )
+        }))
+        const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.STOP_EXISTING_SERVER, { serverId: selectedServerId })
+        if (result.success) {
+          await refresh()
+          toast({
+            title: "Server stopped",
+            description: "Your Minecraft server has been stopped.",
+          })
+        } else {
+          useServerListStore.setState(state => ({
+            servers: state.servers.map(s => 
+              s.id === selectedServerId ? { ...s, status: "online" } : s
+            )
+          }))
+          throw new Error(result.error || "Failed to stop server")
+        }
+      } else if (action === "start") {
+        useServerListStore.setState(state => ({
+          servers: state.servers.map(s => 
+            s.id === selectedServerId ? { ...s, status: "starting" } : s
+          )
+        }))
+        const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_EXISTING_SERVER, { serverId: selectedServerId })
+        if (result.success) {
+          await refresh()
+          toast({
+            title: "Server started",
+            description: "Your Minecraft server is now running.",
+          })
+        } else {
+          useServerListStore.setState(state => ({
+            servers: state.servers.map(s => 
+              s.id === selectedServerId ? { ...s, status: "offline" } : s
+            )
+          }))
+          throw new Error(result.error || "Failed to start server")
+        }
+      } else if (action === "restart") {
+        useServerListStore.setState(state => ({
+          servers: state.servers.map(s => 
+            s.id === selectedServerId ? { ...s, status: "stopping" } : s
+          )
+        }))
+        const stopResult = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.STOP_EXISTING_SERVER, { serverId: selectedServerId })
+        if (!stopResult.success) {
+          useServerListStore.setState(state => ({
+            servers: state.servers.map(s => 
+              s.id === selectedServerId ? { ...s, status: "online" } : s
+            )
+          }))
+          throw new Error(stopResult.error || "Failed to stop server")
+        }
+        
+        useServerListStore.setState(state => ({
+          servers: state.servers.map(s => 
+            s.id === selectedServerId ? { ...s, status: "starting" } : s
+          )
+        }))
+        const startResult = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.START_EXISTING_SERVER, { serverId: selectedServerId })
+        if (startResult.success) {
+          await refresh()
+          toast({
+            title: "Server restarted",
+            description: "Your Minecraft server has been restarted.",
+          })
+        } else {
+          useServerListStore.setState(state => ({
+            servers: state.servers.map(s => 
+              s.id === selectedServerId ? { ...s, status: "offline" } : s
+            )
+          }))
+          throw new Error(startResult.error || "Failed to start server")
+        }
+      } else if (action === "kill") {
+        const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.STOP_EXISTING_SERVER, { serverId: selectedServerId, force: true })
+        if (result.success) {
+          await refresh()
+          toast({
+            title: "Server killed",
+            description: "Your Minecraft server has been forcefully terminated.",
+            variant: "destructive",
+          })
+        } else {
+          throw new Error(result.error || "Failed to kill server")
+        }
+      }
+    } catch (error) {
       toast({
-        title: "Server starting",
-        description: "Your Minecraft server is starting up...",
-      })
-    } else if (action === "restart") {
-      setStatus("stopping")
-      toast({
-        title: "Server restarting",
-        description: "Your Minecraft server is restarting...",
-      })
-      setTimeout(() => {
-        setStatus("starting")
-        setTimeout(() => setStatus("online"), 3000)
-      }, 2000)
-    } else if (action === "kill") {
-      setStatus("offline")
-      toast({
-        title: "Server killed",
-        description: "Your Minecraft server has been forcefully terminated.",
-        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive"
       })
     }
   }
