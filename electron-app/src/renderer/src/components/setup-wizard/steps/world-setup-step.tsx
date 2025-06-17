@@ -145,16 +145,16 @@ export function WorldSetupStep({ onComplete }: WorldSetupStepProps) {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Globe className="h-5 w-5 text-linen" />
-                    <Label htmlFor="world-name" className="text-linen">
-                      World Name
+                    <Label htmlFor="server-name" className="text-linen">
+                      Server Name
                     </Label>
                   </div>
                   <Input
-                    id="world-name"
+                    id="server-name"
                     value={config.worldName || ""}
                     onChange={(e) => handleWorldNameChange(e.target.value)}
-                    placeholder="My Minecraft World"
-                    className="bg-space-cadet border-cool-gray/30 text-linen"
+                    placeholder="My Minecraft Server"
+                    className="bg-space-cadet border-cool-gray/30 text-linen placeholder:text-cool-gray focus:placeholder:opacity-0"
                   />
                 </div>
 
@@ -170,7 +170,7 @@ export function WorldSetupStep({ onComplete }: WorldSetupStepProps) {
                     value={config.worldSeed || ""}
                     onChange={(e) => handleSeedChange(e.target.value)}
                     placeholder="Leave blank for random seed"
-                    className="bg-space-cadet border-cool-gray/30 text-linen"
+                    className="bg-space-cadet border-cool-gray/30 text-linen placeholder:text-cool-gray focus:placeholder:opacity-0"
                   />
                   <p className="text-xs text-cool-gray">
                     Enter a seed value to generate a specific world, or leave blank for a random world
@@ -258,14 +258,14 @@ export function WorldSetupStep({ onComplete }: WorldSetupStepProps) {
                       </div>
                       <h3 className="text-linen font-medium text-lg mb-1">World Imported</h3>
                       <div className="space-y-2 mb-4">
-                        <Label htmlFor="imported-world-name" className="text-linen">
+                        <Label htmlFor="imported-server-name" className="text-linen">
                           World Name
                         </Label>
                         <Input
-                          id="imported-world-name"
+                          id="imported-server-name"
                           value={config.worldName || ""}
                           onChange={(e) => handleWorldNameChange(e.target.value)}
-                          placeholder="Enter world name"
+                          placeholder="Enter server name"
                           className="bg-space-cadet border-cool-gray/30 text-linen max-w-[300px] mx-auto"
                         />
                       </div>
