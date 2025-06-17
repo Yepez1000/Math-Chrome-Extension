@@ -6,27 +6,16 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { motion, AnimatePresence } from "framer-motion"
-import { CuboidIcon as Cube, Cpu, Zap, Leaf, Hammer, Feather, Archive} from "lucide-react"
+import { CuboidIcon as Cube, Cpu, Zap, Leaf, Hammer, Feather, Archive, ChevronDown, ChevronUp} from "lucide-react"
 import { useServerConfigStore, ServerConfig } from "@/stores/server-config-store"
 import { useFlavorSelectionStore } from "@/stores/step-stores"
+import { ServerTypeCard, ServerTypeInfo } from "../components/server-type-card"
 
 interface FlavorSelectionStepProps {
   onComplete: () => void
 }
 
 type ServerType = ServerConfig["serverType"]
-
-type ServerTypeInfo = {
-  id: ServerType
-  name: string
-  description: string
-  icon: React.ElementType
-  isModded: boolean
-  performance: number // 1-5 scale
-  plugins: boolean
-  mods: boolean
-  recommended?: boolean
-}
 
 // Server type data moved outside component to avoid recreation
 const serverTypes: ServerTypeInfo[] = [
@@ -132,96 +121,29 @@ const itemVariants = {
   },
 }
 
-// Performance bars component
-const PerformanceBars = ({ level }: { level: number }) => (
-  <div className="flex gap-1 mt-2">
-    {[1, 2, 3, 4, 5].map((bar) => (
-      <div key={bar} className={`h-1.5 w-full rounded-full ${bar <= level ? "bg-linen" : "bg-cool-gray/30"}`} />
-    ))}
-  </div>
-)
 
-// Server type card component
-const ServerTypeCard = ({ type, isSelected, onSelect }: { type: ServerTypeInfo; isSelected: boolean; onSelect: () => void }) => {
-  const Icon = type.icon
-  return (
-    <motion.div variants={itemVariants} whileHover="active" className="relative">
-      {type.recommended && (
-        <div className="absolute -top-1 -right-1 z-10">
-          <div className="bg-linen text-night text-xs font-bold py-1 px-2 rounded-md transform rotate-3 shadow-md">
-            Recommended for Beginners
-          </div>
-        </div>
-      )}
-      <Card
-        className={`cursor-pointer transition-all hover:border-linen h-full ${
-          isSelected ? "border-linen bg-linen/5" : "border-cool-gray/30 bg-night"
-        }`}
-        onClick={onSelect}
-      >
-        <CardHeader className="pb-2">
-          <motion.div
-            className="flex justify-center mb-2"
-            animate={{ rotate: isSelected ? [0, 5, 0, -5, 0] : 0 }}
-            transition={{ duration: 0.5, delay: 0.2, repeat: isSelected ? 1 : 0 }}
-          >
-            <Icon className={`h-10 w-10 ${isSelected ? "text-linen" : "text-cool-gray"}`} />
-          </motion.div>
-          <CardTitle className="text-center text-linen">{type.name}</CardTitle>
-        </CardHeader>
-        <CardContent className="pb-2">
-          <CardDescription className="text-center text-cool-gray lg:min-h-[88px] md:min-h-[110px] sm:min-h-[0px]">{type.description}</CardDescription>
-
-          <div className="mt-4 space-y-2 text-xs text-cool-gray">
-            <div>
-              <div className="flex justify-between mb-1">
-                <span>Performance</span>
-                <span className="text-linen">
-                  {["Low", "Moderate", "Good", "High", "Excellent"][type.performance - 1]}
-                </span>
-              </div>
-              <PerformanceBars level={type.performance} />
-            </div>
-
-            <div className="flex justify-between pt-2">
-              <span className={`${type.plugins ? "text-linen" : "text-cool-gray/50"}`}>
-                {type.plugins ? "✓ Plugin Support" : "✗ No Plugins"}
-              </span>
-              <span className={`${type.mods ? "text-linen" : "text-cool-gray/50"}`}>
-                {type.mods ? "✓ Mod Support" : "✗ No Mods"}
-              </span>
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="flex justify-center pt-2">
-          <Button
-            variant={isSelected ? "default" : "outline"}
-            onClick={onSelect}
-            className={`w-full ${
-              isSelected
-                ? "bg-linen text-night hover:bg-linen/90"
-                : "border-cool-gray text-linen hover:bg-cool-gray/10 bg-night"
-            }`}
-          >
-            Select {type.name}
-          </Button>
-        </CardFooter>
-      </Card>
-    </motion.div>
-  )
-}
 
 export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
   const { config, updateConfig } = useServerConfigStore()
-  const { selectedType, setSelectedType, carouselPage, setCarouselPage, isAnimating, setIsAnimating } = useFlavorSelectionStore()
+  const { 
+    selectedType, 
+    setSelectedType, 
+    isExpanded, 
+    setIsExpanded, 
+    isAnimating, 
+    setIsAnimating,
+    topRowTypes,
+    bottomRowTypes,
+    swapRows
+  } = useFlavorSelectionStore()
 
-  // Page 1: Vanilla, Paper, Forge
-  // Page 2: Spigot, Fabric, Bukkit
-  const page1Types = serverTypes.slice(0, 3)
-  const page2Types = serverTypes.slice(3, 6)
+  // Get server type info based on current row arrangement
+  const topRowServerTypes = topRowTypes.map(id => serverTypes.find(type => type.id === id)!).filter(Boolean)
+  const bottomRowServerTypes = bottomRowTypes.map(id => serverTypes.find(type => type.id === id)!).filter(Boolean)
 
   const handleServerTypeSelect = (type: ServerType) => {
     setSelectedType(type)
+    
     const serverTypeInfo = serverTypes.find((t) => t.id === type)
     if (serverTypeInfo) {
       updateConfig({
@@ -235,17 +157,20 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
     updateConfig({ hostingMode: value })
   }
 
-  const handleNextPage = () => {
+  const handleToggleExpansion = () => {
     if (!isAnimating) {
-      setIsAnimating(true)
-      setCarouselPage(2)
-    }
-  }
-
-  const handlePrevPage = () => {
-    if (!isAnimating) {
-      setIsAnimating(true)
-      setCarouselPage(1)
+      setIsAnimating(true) // Start animation
+      if (isExpanded) {
+        // When collapsing, check if selected type is in bottom row
+        // If so, swap rows to bring selection to top before collapsing
+        const isSelectedInBottomRow = selectedType && bottomRowTypes.includes(selectedType)
+        if (isSelectedInBottomRow) {
+          swapRows()
+        }
+        setIsExpanded(false)
+      } else {
+        setIsExpanded(true)
+      }
     }
   }
 
@@ -261,59 +186,84 @@ export function FlavorSelectionStep({ onComplete }: FlavorSelectionStepProps) {
         <p className="text-cool-gray">Select the type of Minecraft server you want to run</p>
       </motion.div>
 
-      <div className="relative overflow-hidden py-3">
-        <AnimatePresence initial={false} mode="wait" onExitComplete={() => setIsAnimating(false)}>
-          {carouselPage === 1 ? (
+      <div className="space-y-4">
+        {/* Top Row - Always Visible */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 gap-4"
+          key={`top-row-${topRowTypes.join('-')}`}
+        >
+          {topRowServerTypes.map((type) => (
             <motion.div
-              key="page1"
-              className="grid grid-cols-1 md:grid-cols-3 gap-4"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={pageVariants}
+              key={type.id}
+              variants={itemVariants}
             >
-              {page1Types.map((type) => (
-                <ServerTypeCard
-                  key={type.id}
-                  type={type}
-                  isSelected={selectedType === type.id}
-                  onSelect={() => handleServerTypeSelect(type.id)}
-                />
-              ))}
+              <ServerTypeCard
+                type={type}
+                isSelected={selectedType === type.id}
+                onSelect={() => handleServerTypeSelect(type.id)}
+              />
             </motion.div>
-          ) : (
+          ))}
+        </div>
+
+        {/* Show More/Less Toggle Button */}
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            onClick={handleToggleExpansion}
+            disabled={isAnimating}
+            className="text-linen border-linen bg-space-cadet hover:text-linen hover:bg-linen/10 transition-colors"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="h-4 w-4 mr-2" />
+                Show Less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Show More Server Types
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Bottom Row - Collapsible */}
+        <AnimatePresence
+          onExitComplete={() => setIsAnimating(false)} // Reset animation state when exit is complete
+        >
+          {isExpanded && (
             <motion.div
-              key="page2"
               className="grid grid-cols-1 md:grid-cols-3 gap-4"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={pageVariants}
+              initial={{ opacity: 0, height: 0, y: -20 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{
+                duration: 0.3,
+                ease: "easeOut",
+                staggerChildren: 0.05,
+              }}
+              onAnimationComplete={() => setIsAnimating(false)} // Reset animation state when enter animation is complete
+              key={`bottom-row-${bottomRowTypes.join('-')}`}
             >
-              {page2Types.map((type) => (
-                <ServerTypeCard
+              {bottomRowServerTypes.map((type) => (
+                <motion.div
                   key={type.id}
-                  type={type}
-                  isSelected={selectedType === type.id}
-                  onSelect={() => handleServerTypeSelect(type.id)}
-                />
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                >
+                  <ServerTypeCard
+                    type={type}
+                    isSelected={selectedType === type.id}
+                    onSelect={() => handleServerTypeSelect(type.id)}
+                  />
+                </motion.div>
               ))}
             </motion.div>
           )}
         </AnimatePresence>
-
-        <div className="flex justify-center mt-4 gap-2">
-          <button
-            className={`h-2 w-8 rounded-full transition-colors ${carouselPage === 1 ? "bg-linen" : "bg-cool-gray/30"}`}
-            onClick={() => carouselPage !== 1 && handlePrevPage()}
-            aria-label="Go to page 1"
-          />
-          <button
-            className={`h-2 w-8 rounded-full transition-colors ${carouselPage === 2 ? "bg-linen" : "bg-cool-gray/30"}`}
-            onClick={() => carouselPage !== 2 && handleNextPage()}
-            aria-label="Go to page 2"
-          />
-        </div>
       </div>
 
       <motion.div
