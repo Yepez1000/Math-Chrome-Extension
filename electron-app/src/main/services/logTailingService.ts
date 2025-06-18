@@ -25,7 +25,14 @@ function readNewContent(serverId: string, filePath: string, lastSize: number): n
     const newSize = stats.size;
 
     if (newSize > lastSize) {
-      const stream = fs.createReadStream(filePath, { start: lastSize, end: newSize - 1, encoding: 'utf-8' });
+      let startPosition = lastSize;
+      
+      // If lastSize is 0 (initial read), implement tail behavior to avoid reading huge files
+      if (lastSize === 0 && newSize > 0) {
+        startPosition = calculateTailStartPosition(filePath, newSize);
+      }
+      
+      const stream = fs.createReadStream(filePath, { start: startPosition, end: newSize - 1, encoding: 'utf-8' });
       stream.on('data', (data) => {
         sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, { serverId, message: data.toString() });
       });
@@ -33,8 +40,9 @@ function readNewContent(serverId: string, filePath: string, lastSize: number): n
         devError(`Error reading log file for server ${serverId}:`, err);
       });
     } else if (newSize < lastSize) {
-      // Log file was likely rotated or cleared, read from the beginning
-      const stream = fs.createReadStream(filePath, { start: 0, end: newSize - 1, encoding: 'utf-8' });
+      // Log file was likely rotated or cleared, read from the beginning with tail behavior
+      const startPosition = calculateTailStartPosition(filePath, newSize);
+      const stream = fs.createReadStream(filePath, { start: startPosition, end: newSize - 1, encoding: 'utf-8' });
        stream.on('data', (data) => {
         sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, { serverId, message: data.toString() });
       });
@@ -47,6 +55,44 @@ function readNewContent(serverId: string, filePath: string, lastSize: number): n
     devError(`Failed to stat log file for server ${serverId}:`, error);
     return lastSize; // Return original size on error
   }
+}
+
+/**
+ * Calculates the starting position to read approximately the last MAX_LOG_LINES from a file.
+ * Uses an estimation approach to avoid reading the entire file.
+ * @param filePath - The path to the log file.
+ * @param fileSize - The size of the file.
+ * @returns The calculated start position.
+ */
+function calculateTailStartPosition(filePath: string, fileSize: number): number {
+  const ESTIMATED_LINE_LENGTH = 100; // Average bytes per log line estimate
+  const BUFFER_SIZE = Math.min(fileSize, MAX_LOG_LINES * ESTIMATED_LINE_LENGTH);
+  
+  // Start reading from this position to get approximately MAX_LOG_LINES
+  let startPosition = Math.max(0, fileSize - BUFFER_SIZE);
+  
+  try {
+    // Read a small chunk to find the first complete line boundary
+    const chunkSize = Math.min(1024, fileSize - startPosition); // Read up to 1KB to find newline
+    const buffer = Buffer.alloc(chunkSize);
+    const fd = fs.openSync(filePath, 'r');
+    const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, startPosition);
+    fs.closeSync(fd);
+    
+    if (bytesRead > 0) {
+      const chunk = buffer.toString('utf-8', 0, bytesRead);
+      // Find the first newline to ensure we start at a complete line
+      const firstNewlineIndex = chunk.indexOf('\n');
+      if (firstNewlineIndex !== -1 && startPosition + firstNewlineIndex + 1 < fileSize) {
+        startPosition = startPosition + firstNewlineIndex + 1;
+      }
+    }
+  } catch (error) {
+    devError(`Error calculating tail start position:`, error);
+    // Fall back to estimated position if buffer read fails
+  }
+  
+  return startPosition;
 }
 
 /**

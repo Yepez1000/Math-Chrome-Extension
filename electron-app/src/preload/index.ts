@@ -86,6 +86,8 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         // Add channel for server started event
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
+        // Add channel for server list updates
+        IPC_CHANNELS.SERVER_LIST_UPDATED,
         // Add other on channels as needed
         "APP_CLOSING"
       ] as const
@@ -97,8 +99,7 @@ const api: ElectronAPI = {
           ipcRenderer.removeListener(channel, subscription);
         }
       }
-      // Return a no-op function if channel is not valid
-      return () => {};
+      throw new Error(`Unauthorized IPC on channel: ${channel}`)
     },
     removeListener: (channel: string, func: (...args: any[]) => void) => {
       const validRemoveListenerChannels = [
@@ -109,6 +110,7 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
         IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
+        IPC_CHANNELS.SERVER_LIST_UPDATED,
         // Add other removeListener channels as needed
       ] as const
       if ((validRemoveListenerChannels as ReadonlyArray<string>).includes(channel)) {
@@ -124,6 +126,7 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
         IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
+        IPC_CHANNELS.SERVER_LIST_UPDATED,
         // Add other removeAllListeners channels as needed
       ] as const
       if ((validRemoveAllListenersChannels as ReadonlyArray<string>).includes(channel)) {

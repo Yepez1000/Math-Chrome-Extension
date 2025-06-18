@@ -188,40 +188,31 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   setupListeners: () => {
     const { addConsoleMessage, setMinecraftServerStatusDetails } = get();
 
-    const handleServerOutput = (data: string | { serverId: string; message: string }) => {
+    // Shared utility function to process console data
+    const processConsoleData = (data: string | { serverId: string; message: string }, isError: boolean) => {
       // Only handle old string format during startup to avoid duplicates
       // The new object format is handled by the dashboard console
       if (typeof data === 'string') {
         // Split by both \r\n and \n, then filter out empty lines
         const lines = data.split(/\r?\n/).filter(line => line.trim());
         
-        // Get the last non-empty line
-        if (lines.length > 0) {
-          const lastLine = lines[lines.length - 1].trim();
-          if (lastLine) {
-            addConsoleMessage(lastLine, false);
+        // Process all non-empty lines
+        lines.forEach(line => {
+          const trimmedLine = line.trim();
+          if (trimmedLine) {
+            addConsoleMessage(trimmedLine, isError);
           }
-        }
+        });
       }
       // Ignore object format to prevent duplicates
     };
 
+    const handleServerOutput = (data: string | { serverId: string; message: string }) => {
+      processConsoleData(data, false);
+    };
+
     const handleServerErrorOutput = (data: string | { serverId: string; message: string }) => {
-      // Only handle old string format during startup to avoid duplicates
-      // The new object format is handled by the dashboard console
-      if (typeof data === 'string') {
-        // Split by both \r\n and \n, then filter out empty lines
-        const lines = data.split(/\r?\n/).filter(line => line.trim());
-        
-        // Get the last non-empty line
-        if (lines.length > 0) {
-          const lastLine = lines[lines.length - 1].trim();
-          if (lastLine) {
-            addConsoleMessage(lastLine, true);
-          }
-        }
-      }
-      // Ignore object format to prevent duplicates
+      processConsoleData(data, true);
     };
 
     const handleServerStatusUpdate = (data: { 

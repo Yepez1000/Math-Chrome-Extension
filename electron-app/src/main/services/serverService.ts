@@ -14,10 +14,8 @@ export const activeProcesses = new Map<string, ChildProcess>();
 
 // Helper function to send events to renderer
 export function sendToRenderer(channel: string, data: any) {
-  devLog(`entered sendToRenderer funct`, data);
   const mainWindow = BrowserWindow.getAllWindows()[0];
   if (mainWindow && !mainWindow.isDestroyed()) {
-    devLog(`Sending ${channel} to renderer:`, data);
     mainWindow.webContents.send(channel, data);
   } else {
     devError(`Cannot send ${channel} to renderer: mainWindow not available`);
@@ -140,7 +138,7 @@ export async function startExistingServer(serverId: string, serverDirectory: str
         cleanup(); // Clean up listeners
         reject(new Error('Server startup timed out after 120 seconds'));
       }
-    }, 30000); // 120 second timeout
+    }, 120000); // 120 second timeout
 
     // Ensure stdout is available
     if (!process.stdout) {
