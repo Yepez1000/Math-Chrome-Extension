@@ -69,7 +69,7 @@ export function ConsoleView() {
         devLog(`Stopped polling logs for server: ${selectedServerId}`);
       }
     };
-  }, [selectedServerId, server, isServerRunning]);
+  }, [selectedServerId, isServerRunning]);
 
   // Auto-scroll to bottom when new output arrives
   useEffect(() => {
