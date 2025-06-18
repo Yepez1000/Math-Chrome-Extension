@@ -6,7 +6,6 @@ import fsSync from 'fs';
 import { ipcMain, BrowserWindow } from 'electron';
 import net from 'net';
 import { IPC_CHANNELS } from '../../shared/types';
-import { promisify } from 'util';
 import { findAvailablePort } from '../ipcHandlers/minecraftHandlers';
 import { stopTailingLog } from './logTailingService';
 
