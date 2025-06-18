@@ -8,22 +8,17 @@ import net from 'net';
 import { IPC_CHANNELS } from '../../shared/types';
 import { promisify } from 'util';
 import { findAvailablePort } from '../ipcHandlers/minecraftHandlers';
+import { stopTailingLog } from './logTailingService';
 
 export const activeProcesses = new Map<string, ChildProcess>();
 
 // Helper function to send events to renderer
-function sendToRenderer(channel: string, data: any) {
+export function sendToRenderer(channel: string, data: any) {
   devLog(`entered sendToRenderer funct`, data);
   const mainWindow = BrowserWindow.getAllWindows()[0];
   if (mainWindow && !mainWindow.isDestroyed()) {
-    // Ensure data is a string or valid object
-    const processedData = typeof data === 'string' ? data : 
-                         data === undefined || data === null ? '' :
-                         typeof data === 'object' ? JSON.stringify(data) :
-                         String(data);
-    
-    devLog(`Sending ${channel} to renderer:`, processedData);
-    mainWindow.webContents.send(channel, processedData);
+    devLog(`Sending ${channel} to renderer:`, data);
+    mainWindow.webContents.send(channel, data);
   } else {
     devError(`Cannot send ${channel} to renderer: mainWindow not available`);
   }
@@ -168,8 +163,8 @@ export async function startExistingServer(serverId: string, serverDirectory: str
       const output = data.toString();
       devLog(`[Server ${serverId} stdout]: ${output}`);
 
-      // Send output to renderer
-      sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, output);
+      // Send output to renderer with serverId
+      sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, { serverId, message: output });
 
       // Check for successful startup message
       if (output.includes('Done') || output.includes('For help, type "help"')) {
@@ -190,8 +185,8 @@ export async function startExistingServer(serverId: string, serverDirectory: str
       const output = data.toString();
       devError(`[Server ${serverId} stderr]: ${output}`);
       
-      // Send error output to renderer
-      sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_ERROR, output);
+      // Send error output to renderer with serverId
+      sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_ERROR, { serverId, message: output });
       
       // Check for file locking errors
       if (output.includes('cannot access the file because another process has locked')) {
@@ -284,6 +279,7 @@ export async function stopExistingServer(serverId: string): Promise<{success: bo
     return {success: false, error: `Shutdown failed: ${err instanceof Error ? err.message : String(err)}`};
   } finally {
     activeProcesses.delete(serverId);
+    stopTailingLog(serverId); // Stop the log watcher
   }
 }
 

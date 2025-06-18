@@ -8,177 +8,68 @@ import { devLog } from '@shared/utils/logger'
 import { useServerListStore } from "@/lib/servers-store"
 import { IPC_CHANNELS } from "@shared/types"
 
+const MAX_CONSOLE_LINES = 200;
+const POLLING_INTERVAL = 1000; // Poll every 1 second
+
 export function ConsoleView() {
   const [command, setCommand] = useState("")
   const [consoleOutput, setConsoleOutput] = useState<string[]>([])
-  const [isServerRunning, setIsServerRunning] = useState(false)
-  const { selectedServerId } = useServerListStore()
+  
+  const { selectedServerId, servers } = useServerListStore()
+  const server = servers.find(s => s.id === selectedServerId)
+  const isServerRunning = server?.status === 'online'
+  
   const consoleRef = useRef<HTMLDivElement>(null)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Debug selectedServerId changes
+  // Simple polling-based log fetching
   useEffect(() => {
-    devLog('selectedServerId changed:', selectedServerId);
-  }, [selectedServerId]);
-
-  // Check server status on mount and when selectedServerId changes
-  useEffect(() => {
-    devLog('Status check effect triggered with selectedServerId:', selectedServerId);
-    
-    const checkServerStatus = async () => {
-      if (!selectedServerId) {
-        devLog('No selectedServerId, skipping status check');
-        return;
-      }
-      
-      try {
-        devLog('Fetching server list for status check...');
-        const servers = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
-        const server = servers.find((s: any) => s.id === selectedServerId);
-        devLog('Found server:', server);
-        
-        if (server?.status === 'online') {
-          devLog('Server is online, enabling console');
-          setIsServerRunning(true);
-        } else {
-          devLog('Server is not online, status:', server?.status);
-        }
-      } catch (error) {
-        console.error('Failed to check server status:', error);
-      }
-    };
-
-    checkServerStatus();
-  }, [selectedServerId]);
-
-  useEffect(() => {
-    devLog('Server setup effect triggered with selectedServerId:', selectedServerId);
-    
-    if (!selectedServerId) {
-      devLog('No selectedServerId, skipping server setup');
+    if (!selectedServerId || !server) {
+      setConsoleOutput([]);
       return;
     }
 
-    // Initialize console output if server is already running
-    const initializeConsole = async () => {
+    const fetchLogs = async () => {
       try {
-        const servers = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
-        const server = servers.find((s: any) => s.id === selectedServerId);
-        
-        if (server?.status === 'online') {
-          devLog('Server is already online, initializing console');
-          setIsServerRunning(true);
-          // Add a welcome message to the console
-          //setConsoleOutput(prev => [...prev, 'Server is running. Type a command to begin.']);
+        const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_LOG_CONTENT, selectedServerId);
+        if (result.success) {
+          // Only update if content has changed to avoid unnecessary re-renders
+          setConsoleOutput(prevOutput => {
+            const newContent = result.content || [];
+            // Simple comparison - if lengths are different or last lines don't match, update
+            if (prevOutput.length !== newContent.length || 
+                (newContent.length > 0 && prevOutput[prevOutput.length - 1] !== newContent[newContent.length - 1])) {
+              devLog(`Console updated: ${newContent.length} lines`);
+              return newContent;
+            }
+            return prevOutput;
+          });
+        } else if (result.error) {
+          devLog(`Failed to fetch logs: ${result.error}`);
         }
       } catch (error) {
-        console.error('Failed to initialize console:', error);
+        devLog('Error fetching logs:', error);
       }
     };
 
-    initializeConsole();
+    // Initial fetch
+    fetchLogs();
 
-    const handleConsoleOutput = (_event: any, data: string) => {
-      devLog('Console output received - event:', _event);
-      devLog('Console output received - data:', data);
-      
-      // Get the output data from either the event or data parameter
-      const outputData = typeof _event === 'string' ? _event : data;
-      
-      // Only skip if both event and data are null/undefined
-      if (!outputData) {
-        devLog('Received null or undefined data, skipping');
-        return;
-      }
-      
-      // Split the output into lines and add each line separately
-      const lines = outputData.split('\n').filter(line => line.trim());
-      if (lines.length > 0) {
-        setConsoleOutput(prev => [...prev, ...lines]);
-      }
-      
-      // Check for server ready message
-      if (outputData.includes('Done') || outputData.includes('For help, type "help"')) {
-        devLog('Server ready message detected, setting isServerRunning to true');
-        setIsServerRunning(true);
-      }
+    // Set up polling only if server is running
+    if (isServerRunning) {
+      pollingIntervalRef.current = setInterval(fetchLogs, POLLING_INTERVAL);
+      devLog(`Started polling logs for server: ${selectedServerId}`);
     }
 
-    const handleConsoleError = (_event: any, data: string) => {
-      devLog('Console error received:', data);
-      // Ensure data is a string and not undefined
-      if (!data) {
-        devLog('Received undefined or null error data, skipping');
-        return;
-      }
-      // Split error output into lines and add each line separately
-      const lines = data.split('\n').filter(line => line.trim());
-      if (lines.length > 0) {
-        setConsoleOutput(prev => [...prev, ...lines.map(line => `ERROR: ${line}`)]);
-      }
-    }
-
-    const handleServerStatus = async (_event: any, _data: any) => {
-      devLog('Server status update received - event:', _event);
-      devLog('Server status update received - data:', _data);
-      
-      // If we receive a stop status, immediately disable the console
-      const eventPayload = typeof _event === 'string' ? JSON.parse(_event) : _event;
-      if (eventPayload?.status === "Server stopped") {
-        devLog('Server stopped status detected, disabling console');
-        setIsServerRunning(false);
-        return;
-      }
-      
-      // Always check current server status first
-      try {
-        // Refresh the server list to get the latest status
-        await useServerListStore.getState().refresh();
-        const servers = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
-        const server = servers.find((s: any) => s.id === selectedServerId);
-        devLog('Current server status:', server?.status);
-        
-        // If we have a server and it's online, set running to true
-        if (server?.status === 'online') {
-          devLog('Server is online, enabling console');
-          setIsServerRunning(true);
-          return;
-        }
-        
-        // If we have an event with status, check it
-        if (_event) {
-          const statusValue = typeof _event === 'string' ? _event : _event.status;
-          devLog('Event status value:', statusValue);
-          
-          if (statusValue === "Server running") {
-            devLog('Server running status detected, enabling console');
-            setIsServerRunning(true);
-            return;
-          }
-        }
-        
-        // If we get here, server is not running
-        devLog('Server is not running, disabling console');
-        setIsServerRunning(false);
-      } catch (error) {
-        console.error('Failed to check server status:', error);
-        devLog('Failed to check server status:', error);
-        setIsServerRunning(false);
-      }
-    }
-
-    // Subscribe to console output
-    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, handleConsoleOutput);
-    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_CONSOLE_ERROR, handleConsoleError);
-    window.electronAPI.ipcRenderer.on(IPC_CHANNELS.SERVER_STATUS_UPDATE, handleServerStatus);
-
-    // Cleanup listeners
+    // Cleanup
     return () => {
-      devLog('Cleaning up server listeners');
-      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT);
-      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_CONSOLE_ERROR);
-      window.electronAPI.ipcRenderer.removeAllListeners(IPC_CHANNELS.SERVER_STATUS_UPDATE);
-    }
-  }, [selectedServerId]);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+        devLog(`Stopped polling logs for server: ${selectedServerId}`);
+      }
+    };
+  }, [selectedServerId, server, isServerRunning]);
 
   // Auto-scroll to bottom when new output arrives
   useEffect(() => {
@@ -190,31 +81,40 @@ export function ConsoleView() {
   const handleSendCommand = async () => {
     if (!command.trim() || !isServerRunning || !selectedServerId) return;
 
-    // Echo the command to the console
-    setConsoleOutput(prev => [...prev, `> ${command.trim()}`]);
+    // Echo the command to the console immediately
+    setConsoleOutput(prev => {
+      const newOutput = [...prev, `> ${command.trim()}`];
+      return newOutput.length > MAX_CONSOLE_LINES 
+        ? newOutput.slice(-MAX_CONSOLE_LINES) 
+        : newOutput;
+    });
 
     try {
-      // First check if the server process exists
-      const servers = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_SERVER_LIST);
-      const server = servers.find((s: any) => s.id === selectedServerId);
-      
-      if (!server || server.status !== 'online') {
-        devLog('Cannot send command: Server is not running');
-        setConsoleOutput(prev => [...prev, 'ERROR: Server is not running']);
-        return;
-      }
-
       await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_SEND_COMMAND, {
         serverId: selectedServerId,
         command: command.trim()
       });
+      
+      // Force a log refresh after sending command to see the response quickly
+      setTimeout(async () => {
+        try {
+          const result = await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.GET_LOG_CONTENT, selectedServerId);
+          if (result.success && result.content) {
+            setConsoleOutput(result.content);
+          }
+        } catch (error) {
+          devLog('Error refreshing logs after command:', error);
+        }
+      }, 500);
+      
     } catch (error) {
       devLog('Failed to send command:', error);
-      setConsoleOutput(prev => [...prev, `ERROR: ${error instanceof Error ? error.message : 'Failed to send command'}`]);
-      // If we get a "Server process not found" error, update the server status
-      if (error instanceof Error && error.message.includes('Server process not found')) {
-        setIsServerRunning(false);
-      }
+      setConsoleOutput(prev => {
+        const newOutput = [...prev, `ERROR: ${error instanceof Error ? error.message : 'Failed to send command'}`];
+        return newOutput.length > MAX_CONSOLE_LINES 
+          ? newOutput.slice(-MAX_CONSOLE_LINES) 
+          : newOutput;
+      });
     }
 
     setCommand("");
@@ -228,7 +128,7 @@ export function ConsoleView() {
       >
         {consoleOutput.length === 0 ? (
           <p className="text-cool-gray italic">
-            {isServerRunning ? "Server is running. Type a command to begin." : "Start your server to begin."}
+            {isServerRunning ? "Loading console output..." : "Start your server to see console output."}
           </p>
         ) : (
           consoleOutput.map((line, index) => (
@@ -242,7 +142,7 @@ export function ConsoleView() {
       <div className="flex mt-4">
         <Input
           type="text"
-          placeholder={isServerRunning ? "Type a command..." : ""}
+          placeholder={isServerRunning ? "Type a command..." : "Start server to send commands"}
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSendCommand()}

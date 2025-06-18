@@ -6,6 +6,7 @@ import { registerAllIpcHandlers } from './ipcHandlers'
 import { stopExistingServer, activeProcesses } from './services/serverService'
 import { devLog, devError } from './utils/logger'
 import { readServerList, writeServerList } from './ipcHandlers/serverListHandlers'
+import { registerLogTailingHandlers } from './services/logTailingService'
 
 declare global {
   namespace Electron {
@@ -114,6 +115,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   registerAllIpcHandlers();
+  registerLogTailingHandlers();
   
   createWindow();
   

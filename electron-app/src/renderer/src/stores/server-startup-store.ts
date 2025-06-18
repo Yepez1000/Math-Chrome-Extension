@@ -188,12 +188,30 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
   setupListeners: () => {
     const { addConsoleMessage, setMinecraftServerStatusDetails } = get();
 
-    const handleServerOutput = (data: string) => {
-      addConsoleMessage(data, false);
+    const handleServerOutput = (data: string | { serverId: string; message: string }) => {
+      // Handle both old string format and new object format
+      const message = typeof data === 'string' ? data : data.message;
+      
+      // Extract the last meaningful line from the message
+      const lines = message.split('\n').filter(line => line.trim());
+      const lastLine = lines[lines.length - 1];
+      
+      if (lastLine && lastLine.trim()) {
+        addConsoleMessage(lastLine.trim(), false);
+      }
     };
 
-    const handleServerErrorOutput = (data: string) => {
-      addConsoleMessage(data, true);
+    const handleServerErrorOutput = (data: string | { serverId: string; message: string }) => {
+      // Handle both old string format and new object format
+      const message = typeof data === 'string' ? data : data.message;
+      
+      // Extract the last meaningful line from the message
+      const lines = message.split('\n').filter(line => line.trim());
+      const lastLine = lines[lines.length - 1];
+      
+      if (lastLine && lastLine.trim()) {
+        addConsoleMessage(lastLine.trim(), true);
+      }
     };
 
     const handleServerStatusUpdate = (data: { 

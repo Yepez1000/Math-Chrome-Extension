@@ -37,6 +37,7 @@
     "@radix-ui/react-toast": "^1.2.8",
     "@radix-ui/react-tooltip": "^1.2.4",
     "@types/electron-store": "3.2.2",
+    "chokidar": "^4.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "electron-store": "10.0.1",

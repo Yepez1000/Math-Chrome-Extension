@@ -57,6 +57,8 @@ export enum IPC_CHANNELS {
   SERVER_STOP = 'server-stop',
   CHECK_PORT = 'check-port',
   SERVER_SEND_COMMAND = 'server-send-command',
+  SERVER_LIST_UPDATED = 'server-list-updated',
+  GET_LOG_CONTENT = 'get-log-content',
 }
 
 export interface SystemInfo {
