@@ -189,29 +189,39 @@ export const useServerStartupStore = create<ServerStartupStore>((set, get) => ({
     const { addConsoleMessage, setMinecraftServerStatusDetails } = get();
 
     const handleServerOutput = (data: string | { serverId: string; message: string }) => {
-      // Handle both old string format and new object format
-      const message = typeof data === 'string' ? data : data.message;
-      
-      // Extract the last meaningful line from the message
-      const lines = message.split('\n').filter(line => line.trim());
-      const lastLine = lines[lines.length - 1];
-      
-      if (lastLine && lastLine.trim()) {
-        addConsoleMessage(lastLine.trim(), false);
+      // Only handle old string format during startup to avoid duplicates
+      // The new object format is handled by the dashboard console
+      if (typeof data === 'string') {
+        // Split by both \r\n and \n, then filter out empty lines
+        const lines = data.split(/\r?\n/).filter(line => line.trim());
+        
+        // Get the last non-empty line
+        if (lines.length > 0) {
+          const lastLine = lines[lines.length - 1].trim();
+          if (lastLine) {
+            addConsoleMessage(lastLine, false);
+          }
+        }
       }
+      // Ignore object format to prevent duplicates
     };
 
     const handleServerErrorOutput = (data: string | { serverId: string; message: string }) => {
-      // Handle both old string format and new object format
-      const message = typeof data === 'string' ? data : data.message;
-      
-      // Extract the last meaningful line from the message
-      const lines = message.split('\n').filter(line => line.trim());
-      const lastLine = lines[lines.length - 1];
-      
-      if (lastLine && lastLine.trim()) {
-        addConsoleMessage(lastLine.trim(), true);
+      // Only handle old string format during startup to avoid duplicates
+      // The new object format is handled by the dashboard console
+      if (typeof data === 'string') {
+        // Split by both \r\n and \n, then filter out empty lines
+        const lines = data.split(/\r?\n/).filter(line => line.trim());
+        
+        // Get the last non-empty line
+        if (lines.length > 0) {
+          const lastLine = lines[lines.length - 1].trim();
+          if (lastLine) {
+            addConsoleMessage(lastLine, true);
+          }
+        }
       }
+      // Ignore object format to prevent duplicates
     };
 
     const handleServerStatusUpdate = (data: { 

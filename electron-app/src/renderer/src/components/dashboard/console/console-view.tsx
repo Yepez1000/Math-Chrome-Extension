@@ -81,14 +81,6 @@ export function ConsoleView() {
   const handleSendCommand = async () => {
     if (!command.trim() || !isServerRunning || !selectedServerId) return;
 
-    // Echo the command to the console immediately
-    setConsoleOutput(prev => {
-      const newOutput = [...prev, `> ${command.trim()}`];
-      return newOutput.length > MAX_CONSOLE_LINES 
-        ? newOutput.slice(-MAX_CONSOLE_LINES) 
-        : newOutput;
-    });
-
     try {
       await window.electronAPI.ipcRenderer.invoke(IPC_CHANNELS.SERVER_SEND_COMMAND, {
         serverId: selectedServerId,
