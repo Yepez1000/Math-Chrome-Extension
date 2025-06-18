@@ -11,7 +11,7 @@ interface ElectronAPI {
   // Expose whitelisted ipcRenderer methods
   ipcRenderer: {
     invoke: (channel: string, ...args: any[]) => Promise<any>
-    on: (channel: string, func: (...args: any[]) => void) => void
+    on: (channel: string, func: (...args: any[]) => void) => () => void
     removeListener: (channel: string, func: (...args: any[]) => void) => void
     removeAllListeners: (channel: string) => void
     send: (channel: string) => void
@@ -66,6 +66,8 @@ const api: ElectronAPI = {
         IPC_CHANNELS.START_EXISTING_SERVER,
         IPC_CHANNELS.STOP_EXISTING_SERVER,
         IPC_CHANNELS.CHECK_PORT,
+        IPC_CHANNELS.SERVER_SEND_COMMAND,
+        IPC_CHANNELS.GET_LOG_CONTENT,
       ] as const
       if ((validInvokeChannels as ReadonlyArray<string>).includes(channel)) {
         return ipcRenderer.invoke(channel, ...args)
@@ -84,13 +86,20 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         // Add channel for server started event
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
+        // Add channel for server list updates
+        IPC_CHANNELS.SERVER_LIST_UPDATED,
         // Add other on channels as needed
         "APP_CLOSING"
       ] as const
       if ((validOnChannels as readonly string[]).includes(channel)) {
-        // Deliberately strip the event object
-        ipcRenderer.on(channel, (_event, ...args) => func(...args));
+        const subscription = (_event, ...args) => func(...args);
+        ipcRenderer.on(channel, subscription);
+        
+        return () => {
+          ipcRenderer.removeListener(channel, subscription);
+        }
       }
+      throw new Error(`Unauthorized IPC on channel: ${channel}`)
     },
     removeListener: (channel: string, func: (...args: any[]) => void) => {
       const validRemoveListenerChannels = [
@@ -101,6 +110,7 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
         IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
+        IPC_CHANNELS.SERVER_LIST_UPDATED,
         // Add other removeListener channels as needed
       ] as const
       if ((validRemoveListenerChannels as ReadonlyArray<string>).includes(channel)) {
@@ -116,6 +126,7 @@ const api: ElectronAPI = {
         IPC_CHANNELS.SERVER_CONSOLE_OUTPUT,
         IPC_CHANNELS.SERVER_CONSOLE_ERROR,
         IPC_CHANNELS.SERVER_STATUS_UPDATE,
+        IPC_CHANNELS.SERVER_LIST_UPDATED,
         // Add other removeAllListeners channels as needed
       ] as const
       if ((validRemoveAllListenersChannels as ReadonlyArray<string>).includes(channel)) {

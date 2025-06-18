@@ -3,16 +3,72 @@ import path from 'path';
 import { devLog, devError } from '../utils/logger';
 import fs from 'fs/promises';
 import fsSync from 'fs';
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import net from 'net';
 import { IPC_CHANNELS } from '../../shared/types';
+import { stopTailingLog } from './logTailingService';
 import { promisify } from 'util';
 import { findAvailablePort } from '../ipcHandlers/minecraftHandlers';
 
 export const activeProcesses = new Map<string, ChildProcess>();
 
+// Helper function to send events to renderer
+export function sendToRenderer(channel: string, data: any) {
+  const mainWindow = BrowserWindow.getAllWindows()[0];
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, data);
+  } else {
+    devError(`Cannot send ${channel} to renderer: mainWindow not available`);
+  }
+}
+
+// Helper functions for server cleanup
+async function handleLogFileCleanup(logPath: string, serverDirectory: string): Promise<void> {
+  if (fsSync.existsSync(logPath)) {
+    try {
+      await fs.rename(logPath, path.join(serverDirectory, 'logs', `latest_${Date.now()}.log.bak`));
+      devLog('Renamed locked log file');
+    } catch (err) {
+      devError(`Log file handling error: ${err}`);
+    }
+  }
+}
+
+async function handleSessionLockCleanup(sessionPath: string): Promise<void> {
+  if (fsSync.existsSync(sessionPath)) {
+    try {
+      await fs.unlink(sessionPath);
+      devLog('Removed stale session.lock file');
+    } catch (err) {
+      devError(`Session lock file handling error: ${err}`);
+    }
+  }
+}
+
+async function handleWorldLockCleanup(worldPath: string): Promise<void> {
+  if (fsSync.existsSync(worldPath)) {
+    const sessionLockPath = path.join(worldPath, 'session.lock');
+    if (fsSync.existsSync(sessionLockPath)) {
+      try {
+        await fs.unlink(sessionLockPath);
+        devLog('Removed stale world session.lock file');
+      } catch (err) {
+        devError(`World session lock file handling error: ${err}`);
+      }
+    }
+  }
+}
+
 // Pure function: Load config and spawn process
 export async function startExistingServer(serverId: string, serverDirectory: string, javaPath: string): Promise<void> {
+  // First check if there's already a process running
+  if (activeProcesses.has(serverId)) {
+    devLog(`Found existing process for ${serverId}, killing it first`);
+    activeProcesses.get(serverId)?.kill('SIGTERM');
+    activeProcesses.delete(serverId);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for cleanup
+  }
+
   const properties = await fs.readFile(path.join(serverDirectory, 'server.properties'), 'utf8');
   const portMatch = properties.match(/server-port=(\d+)/);
   let port = portMatch ? parseInt(portMatch[1]) : 25565;
@@ -28,23 +84,17 @@ export async function startExistingServer(serverId: string, serverDirectory: str
 
   devLog('[Port Tracking] Final server port:', port);
 
-  // 1. Handle OneDrive sync conflicts
+  // Handle file locking issues
   const logPath = path.join(serverDirectory, 'logs', 'latest.log');
-  try {
-    if (fsSync.existsSync(logPath)) {
-      await fs.rename(logPath, path.join(serverDirectory, 'logs', 'latest.log.bak'));
-      devLog('Renamed locked log file');
-    }
-  } catch (err) {
-    devError(`Log file handling error: ${err}`);
-  }
+  const worldPath = path.join(serverDirectory, 'world');
+  const sessionPath = path.join(serverDirectory, 'session.lock');
 
-  // Kill any existing process first
-  if (activeProcesses.has(serverId)) {
-    devLog(`Found existing process for ${serverId}, killing it first`);
-    activeProcesses.get(serverId)?.kill('SIGTERM');
-    activeProcesses.delete(serverId);
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for cleanup
+  try {
+    await handleLogFileCleanup(logPath, serverDirectory);
+    await handleSessionLockCleanup(sessionPath);
+    await handleWorldLockCleanup(worldPath);
+  } catch (err) {
+    devError(`File cleanup error: ${err}`);
   }
 
   const serverJarPath = path.win32.join(serverDirectory, 'server.jar');
@@ -60,49 +110,119 @@ export async function startExistingServer(serverId: string, serverDirectory: str
       '--nogui'
     ], {
       cwd: serverDirectory,
-      windowsHide: true
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
     });
 
+    // Add process to activeProcesses immediately
     activeProcesses.set(serverId, process);
 
     // Track startup success
     let startedSuccessfully = false;
+
+    // Cleanup function to remove all listeners
+    const cleanup = () => {
+      clearTimeout(startupTimeout);
+      process.stdout?.removeAllListeners('data');
+      process.stderr?.removeAllListeners('data');
+      process.removeAllListeners('close');
+      process.removeAllListeners('error');
+      process.stdin?.removeAllListeners('error');
+    };
+
     const startupTimeout = setTimeout(() => {
       if (!startedSuccessfully) {
+        devError(`Server ${serverId} startup timed out after 120 seconds`);
         process.kill();
-        reject(new Error('Server startup timed out'));
+        activeProcesses.delete(serverId);
+        cleanup(); // Clean up listeners
+        reject(new Error('Server startup timed out after 120 seconds'));
       }
-    }, 30000); // 30 second timeout
+    }, 120000); // 120 second timeout
 
-    process.stdout.on('data', (data) => {
+    // Ensure stdout is available
+    if (!process.stdout) {
+      devError('Server process stdout is not available');
+      cleanup(); // Clean up listeners
+      reject(new Error('Server process stdout is not available'));
+      return;
+    }
+
+    // Ensure stderr is available
+    if (!process.stderr) {
+      devError('Server process stderr is not available');
+      cleanup(); // Clean up listeners
+      reject(new Error('Server process stderr is not available'));
+      return;
+    }
+
+    // Set up stdout handler
+    const onStdout = (data: Buffer) => {
       const output = data.toString();
       devLog(`[Server ${serverId} stdout]: ${output}`);
+
+      // Send output to renderer with serverId
+      sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, { serverId, message: output });
 
       // Check for successful startup message
       if (output.includes('Done') || output.includes('For help, type "help"')) {
         startedSuccessfully = true;
         clearTimeout(startupTimeout);
         devLog(`Server ${serverId} started successfully`);
+        // Send status update to renderer
+        sendToRenderer(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+          status: "Server running",
+          type: "minecraft"
+        });
         resolve();
       }
-    });
+    };
 
-    process.stderr.on('data', (data) => {
-      devError(`[Server ${serverId} stderr]: ${data}`);
-    });
+    // Set up stderr handler
+    const onStderr = (data: Buffer) => {
+      const output = data.toString();
+      devError(`[Server ${serverId} stderr]: ${output}`);
+      
+      // Send error output to renderer with serverId
+      sendToRenderer(IPC_CHANNELS.SERVER_CONSOLE_ERROR, { serverId, message: output });
+      
+      // Check for file locking errors
+      if (output.includes('cannot access the file because another process has locked')) {
+        devError('Detected file locking issue, attempting cleanup...');
+        // We'll let the process continue and handle the error in the close event
+      }
+    };
 
-    process.on('close', (code) => {
-      clearTimeout(startupTimeout);
-      activeProcesses.delete(serverId);
+    // Set up process event handlers
+    const onClose = (code: number) => {
+      devLog(`Server ${serverId} process closed with code ${code}`);
       if (!startedSuccessfully) {
+        clearTimeout(startupTimeout);
+        activeProcesses.delete(serverId);
+        cleanup(); // Clean up listeners
         reject(new Error(`Server process exited with code ${code}`));
       }
-    });
+    };
 
-    process.on('error', (err) => {
-      clearTimeout(startupTimeout);
-      activeProcesses.delete(serverId);
-      reject(err);
+    const onError = (error: Error) => {
+      devError(`Server ${serverId} process error: ${error.message}`);
+      if (!startedSuccessfully) {
+        clearTimeout(startupTimeout);
+        activeProcesses.delete(serverId);
+        cleanup(); // Clean up listeners
+        reject(error);
+      }
+    };
+
+    // Attach all listeners
+    process.stdout.on('data', onStdout);
+    process.stderr.on('data', onStderr);
+    process.on('close', onClose);
+    process.on('error', onError);
+
+    // Set up stdin error handler
+    process.stdin.on('error', (error) => {
+      devError(`Server ${serverId} stdin error: ${error.message}`);
     });
   });
 }
@@ -123,6 +243,11 @@ export async function stopExistingServer(serverId: string): Promise<{success: bo
     // Skip graceful shutdown if stdin isn't available
     if (!process.stdin?.writable) {
       process.kill('SIGKILL');
+      // Send status update
+      sendToRenderer(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+        status: "Server stopped",
+        type: "minecraft"
+      });
       return {success: true};
     }
 
@@ -141,11 +266,56 @@ export async function stopExistingServer(serverId: string): Promise<{success: bo
       process.kill('SIGKILL'); // Force kill if graceful fails
     }
 
+    // Send status update
+    sendToRenderer(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
+      status: "Server stopped",
+      type: "minecraft"
+    });
+
     return {success: true};
   } catch (err) {
     return {success: false, error: `Shutdown failed: ${err instanceof Error ? err.message : String(err)}`};
   } finally {
     activeProcesses.delete(serverId);
+    stopTailingLog(serverId); // Stop the log watcher
+  }
+}
+
+export async function sendCommand(serverId: string, command: string): Promise<void> {
+  devLog(`Attempting to send command to server ${serverId}: ${command}`);
+  devLog(`Current active processes: ${Array.from(activeProcesses.keys()).join(', ')}`);
+
+  const process = activeProcesses.get(serverId);
+  if (!process) {
+    devError(`Server process not found for ID: ${serverId}`);
+    throw new Error('Server process not found');
+  }
+
+  if (!process.stdin?.writable) {
+    devError(`Server stdin not available for ID: ${serverId}`);
+    throw new Error('Server stdin not available');
+  }
+
+  try {
+    // Add newline to command if not present
+    const commandWithNewline = command.endsWith('\n') ? command : `${command}\n`;
+    devLog(`Writing command to server stdin: ${commandWithNewline}`);
+    
+    // Write command to stdin and wait for it to complete
+    await new Promise<void>((resolve, reject) => {
+      process.stdin!.write(commandWithNewline, (error) => {
+        if (error) {
+          devError(`Error writing command to server stdin: ${error}`);
+          reject(error);
+        } else {
+          devLog(`Successfully wrote command to server stdin`);
+          resolve();
+        }
+      });
+    });
+  } catch (error) {
+    devError(`Failed to write command to server ${serverId}: ${error}`);
+    throw error;
   }
 }
 
@@ -230,6 +400,16 @@ export function registerServerServiceHandlers() {
     await checkRunningJavaProcesses();
 
     return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SERVER_SEND_COMMAND, async (_, { serverId, command }) => {
+    try {
+      await sendCommand(serverId, command);
+      return { success: true };
+    } catch (error) {
+      devError(`Failed to send command: ${error}`);
+      throw error;
+    }
   });
 }
 

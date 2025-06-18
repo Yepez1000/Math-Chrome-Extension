@@ -2,8 +2,8 @@ import { ipcMain, app } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import { IPC_CHANNELS } from '../../shared/types';
-import { startExistingServer, stopExistingServer } from '../services/serverService';
-import { devLog, devError } from '../utils/logger';
+import { stopExistingServer } from '../services/serverService';
+import { devError } from '../utils/logger';
 
 const serverListPath = path.join(app.getPath('userData'), 'servers.json');
 
@@ -20,6 +20,15 @@ export async function readServerList() {
 // Helper to write the server list
 export async function writeServerList(list: any[]): Promise<void> {
   await fs.writeFile(serverListPath, JSON.stringify(list, null, 2));
+}
+
+export async function updateServerInList(serverId: string, updates: Record<string, any>) {
+  const servers = await readServerList();
+  const updatedServers = servers.map(server =>
+    server.id === serverId ? { ...server, ...updates } : server
+  );
+  await writeServerList(updatedServers);
+  return updatedServers;
 }
 
 export function registerServerListHandlers() {
@@ -45,7 +54,7 @@ export function registerServerListHandlers() {
     try {
       await fs.rm(serverPath, { recursive: true, force: true });
     } catch (err) {
-      console.error("Failed to delete server directory:", err);
+      devError("Failed to delete server directory:", err);
     }
     return list;
   });
@@ -62,44 +71,7 @@ export function registerServerListHandlers() {
 
   // IPC: Update server
   ipcMain.handle(IPC_CHANNELS.UPDATE_SERVER, async (_, { serverId, updates }) => {
-    const servers = await readServerList();
-    const updatedServers = servers.map(server => 
-      server.id === serverId ? { ...server, ...updates } : server
-    );
-    await writeServerList(updatedServers);
-    return updatedServers;
-  });
-
-  // IPC: Start existing server
-  ipcMain.handle(IPC_CHANNELS.START_EXISTING_SERVER, async (_, { serverId }) => {
-    devLog(`Received start request for server: ${serverId}`);
-    const servers = await readServerList();
-    const server = servers.find(s => s.id === serverId);
-    
-    if (!server) {
-      devError(`Server not found: ${serverId}`);
-      return { success: false, error: 'Server not found' };
-    }
-
-    try {
-      devLog(`Starting server with path: ${server.serverPath}, Java: ${server.javaPath}`);
-      await startExistingServer(serverId, server.serverPath, server.javaPath);
-      
-      // Update only the specific server, but first verify its current status
-      const updatedServers = servers.map(s => {
-        if (s.id === serverId && s.status !== 'online') {
-          return { ...s, status: 'online', lastActive: Date.now(), onlinePlayers: s.onlinePlayers };
-        }
-        return s;  // Explicitly return unchanged for others
-      });
-      await writeServerList(updatedServers);
-      devLog(`Successfully updated status for server ${serverId} to online`);
-      return { success: true, servers: updatedServers };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      devError(`Start failed for ${serverId}: ${message}`);
-      return { success: false, error: message };
-    }
+    return await updateServerInList(serverId, updates);
   });
 
   // IPC: Stop existing server

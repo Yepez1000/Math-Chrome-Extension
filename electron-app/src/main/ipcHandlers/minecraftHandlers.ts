@@ -4,9 +4,10 @@ import fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../shared/types';
 import { devLog, devError } from '../utils/logger';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import { activeProcesses } from '../services/serverService';
+import { activeProcesses, sendToRenderer } from '../services/serverService';
 import { checkPort } from '../services/serverService';
-import { readServerList } from './serverListHandlers';
+import { readServerList, updateServerInList } from './serverListHandlers';
+import { startTailingLog } from '../services/logTailingService';
 
 let minecraftServerProcess: ChildProcessWithoutNullStreams | null = null;
 let minecraftServerPid: number | null = null;
@@ -59,7 +60,9 @@ async function cleanupWithDelay(serverDirectory: string): Promise<void> {
 function setupServerProcessListeners(
   serverProcess: ChildProcessWithoutNullStreams,
   event: Electron.IpcMainInvokeEvent,
-  serverType: string
+  serverType: string,
+  serverId: string,
+  serverDirectory: string,
 ) {
   let output = '';
   let errorOutput = '';
@@ -76,16 +79,21 @@ function setupServerProcessListeners(
     const message = data.toString();
     output += message;
     devLog(`Server stdout: ${message}`);
-    event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, message);
+    // We keep sending stdout for a complete record, the frontend can filter if needed
+    event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_OUTPUT, { serverId, message });
 
     if (serverType === 'vanilla' && message.includes('Done')) {
-      devLog('Vanilla server startup detected!');
+      devLog('Vanilla server startup detected! Handing off to log tailing service.');
       event.sender.send(IPC_CHANNELS.SERVER_STATUS_UPDATE, {
         status: "Server running",
         type: "minecraft"
       });
+      activeProcesses.set(serverId, serverProcess); // Add to active processes
+      
+      // Start tailing the log file for continuous updates
+      startTailingLog(serverId, serverDirectory);
+
       resolveStartupPromise?.();
-      cleanup(); // Cleanup listeners after successful startup
     }
   };
 
@@ -93,7 +101,7 @@ function setupServerProcessListeners(
     const message = data.toString();
     errorOutput += message;
     devError(`Server stderr: ${message}`);
-    event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, message);
+    event.sender.send(IPC_CHANNELS.SERVER_CONSOLE_ERROR, { serverId, message });
   };
 
   const onClose = (code: number | null) => {
@@ -135,7 +143,6 @@ function setupServerProcessListeners(
   // Clean up timeout if promise resolves or rejects normally
   serverStartupPromise?.finally(() => {
     clearTimeout(startupTimeout);
-    cleanup(); // Extra cleanup for safety
   });
 }
 
@@ -506,7 +513,7 @@ export function registerMinecraftHandlers() {
       }
 
       // Set up event listeners for server output and events using the helper
-      setupServerProcessListeners(serverProcess, _event, serverType);
+      setupServerProcessListeners(serverProcess, _event, serverType, serverId, serverDirectory);
 
       // Wait for the serverStartupPromise to resolve (indicating 'Done') or reject (indicating error/timeout)
       await serverStartupPromise;
@@ -534,5 +541,81 @@ export function registerMinecraftHandlers() {
   // Add IPC handler for CHECK_PORT
   ipcMain.handle(IPC_CHANNELS.CHECK_PORT, async (_event, port: number) => {
     return await checkPort(port);  // Use the existing checkPort function
+  });
+
+  // START EXISTING SERVER
+  ipcMain.handle(IPC_CHANNELS.START_EXISTING_SERVER, async (event, { serverId }) => {
+    devLog(`Received request to start existing server: ${serverId}`);
+    
+    // Check if a server is already running
+    if (activeProcesses.has(serverId)) {
+      devLog(`Server ${serverId} is already running.`);
+      return { success: true, message: 'Server is already running.' };
+    }
+
+    try {
+      const servers = await readServerList();
+      const serverDetails = servers.find(s => s.id === serverId);
+
+      if (!serverDetails) {
+        throw new Error(`Server with ID ${serverId} not found.`);
+      }
+
+      const { serverPath, javaPath, serverType: type, version, ramGB: ram } = serverDetails;
+      
+      // Clean up any lingering lock files before starting
+      await cleanupServerFiles(serverPath);
+      
+      devLog(`Starting existing server: ${serverDetails.name} (${type} ${version})`);
+      
+      const serverProcess = spawn(javaPath, [
+        `-Xmx${ram}M`,
+        `-Xms${ram}M`,
+        '-jar',
+        'server.jar',
+        'nogui'
+      ], {
+        cwd: serverPath,
+        detached: false,
+      });
+
+      if (!serverProcess || !serverProcess.pid) {
+        throw new Error('Failed to spawn server process.');
+      }
+      
+      devLog(`Existing server ${serverId} started with PID: ${serverProcess.pid}`);
+      activeProcesses.set(serverId, serverProcess);
+
+      // Use a promise to track startup completion
+      serverStartupPromise = new Promise<void>((resolve, reject) => {
+        resolveStartupPromise = resolve;
+        rejectStartupPromise = reject;
+      });
+      
+      setupServerProcessListeners(serverProcess, event, type, serverId, serverPath);
+
+      await serverStartupPromise;
+
+      // After successful startup
+      const updatedServers = await readServerList();
+      const finalServerDetails = updatedServers.find(s => s.id === serverId);
+
+      // Update server status to 'online' in the store
+      await updateServerInList(serverId, { status: 'online', lastActive: Date.now() });
+      sendToRenderer(IPC_CHANNELS.SERVER_LIST_UPDATED, await readServerList());
+
+      return { success: true, port: finalServerDetails?.port };
+    } catch (error) {
+      devError('Error starting existing server:', error);
+      // Ensure the process is cleaned up on failure
+      const process = activeProcesses.get(serverId);
+      if (process) {
+        process.kill();
+        activeProcesses.delete(serverId);
+      }
+      await updateServerInList(serverId, { status: 'offline' });
+      sendToRenderer(IPC_CHANNELS.SERVER_LIST_UPDATED, await readServerList());
+      return { success: false, error: (error as Error).message };
+    }
   });
 } 

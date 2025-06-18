@@ -167,6 +167,7 @@ export function ServersList() {
   const toggleServerStatus = useServerListStore((s) => s.toggleServerStatus)
   const removeServer = useServerListStore((s) => s.removeServer)
   const renameServer = useServerListStore((s) => s.renameServer)
+  const selectServer = useServerListStore((s) => s.selectServer)
   
   const {
     searchQuery,
@@ -204,7 +205,10 @@ export function ServersList() {
 
   // Event handlers - explicit logic
   const handleCreateServer = () => navigate("/create-server")
-  const handleServerClick = (serverId: string) => navigate(`/dashboard?serverId=${serverId}`)
+  const handleServerClick = (serverId: string) => {
+    selectServer(serverId)
+    navigate(`/dashboard?serverId=${serverId}`)
+  }
   
   const handleToggleStatus = async (e: React.MouseEvent, serverId: string, currentStatus: string) => {
     e.stopPropagation();
